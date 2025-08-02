@@ -1,0 +1,51 @@
+{
+  "name": "appemd",
+  "version": "0.1.0",
+  "description": " An incremental DOM renderer for markdown streams using @lezer/markdown AST ",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/smahs/appemd#readme",
+  "bugs": {
+    "url": "https://github.com/smahs/appemd/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smahs/appemd.git"
+  },
+  "author": "smahs <shemzzz@gmail.com>",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "lint": "biome ci .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "release": "bumpp && npm publish"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "bumpp": "^10.1.0",
+    "happy-dom": "^18.0.1",
+    "just-safe-get": "^4.2.0",
+    "tsdown": "^0.11.9",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  },
+  "dependencies": {
+    "@lezer/common": "^1.2.3",
+    "@lezer/highlight": "^1.2.1",
+    "@lezer/markdown": "^1.4.3"
+  }
+}
