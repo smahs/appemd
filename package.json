@@ -1,7 +1,13 @@
 {
   "name": "appemd",
   "version": "0.1.0",
-  "description": " An incremental DOM renderer for markdown streams using @lezer/markdown AST ",
+  "description": " An incremental DOM renderer for markdown streams using @lezer/markdown AST",
+  "keywords": [
+    "markdown",
+    "streaming",
+    "AST",
+    "lezer"
+  ],
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/smahs/appemd#readme",
