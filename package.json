@@ -1,6 +1,6 @@
 {
   "name": "appemd",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": " An incremental DOM renderer for markdown streams using @lezer/markdown AST",
   "keywords": [
     "markdown",
@@ -38,7 +38,7 @@
     "lint": "biome ci .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "release": "bumpp && npm publish"
+    "release": "pnpm build && bumpp && npm publish"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
