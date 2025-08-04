@@ -1,6 +1,6 @@
 {
   "name": "appemd",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": " An incremental DOM renderer for markdown streams using @lezer/markdown AST",
   "keywords": [
     "markdown",

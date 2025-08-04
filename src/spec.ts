@@ -21,7 +21,7 @@ export const LezerTagMap: Record<string, string> = {
   SetextHeading2: "heading",
   CodeBlock: "code_block",
   FencedCode: "code_block",
-  Blockquote: "block_quote",
+  Blockquote: "blockquote",
   HorizontalRule: "horizontal_rule",
   BulletList: "bullet_list",
   OrderedList: "ordered_list",
