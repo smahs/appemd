@@ -1,17 +1,23 @@
-export { createMark, renderMark } from "./inline.ts";
+export * from "./inline.ts";
 export { MarkdownRenderer } from "./renderer.ts";
-export { schemaSpec } from "./spec.ts";
+export * from "./spec.ts";
 export type {
-  Accessor,
+  BlockElements,
   BlockRenderer,
   BlockSpec,
+  DOMState,
+  NodeSpec,
+  RendererOptions,
+  RenderState,
   SchemaSpec,
-  Setter,
+  ScrollConfig,
 } from "./types.ts";
 export {
   createBlock,
   getChildren,
+  getInlineChildren,
   getInstChildren,
   getNodesByTag,
   getNonInstChildren,
+  renderBlock,
 } from "./utils.ts";

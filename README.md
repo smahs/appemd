@@ -55,7 +55,7 @@ Customization may be required in some scenarios:
 
 1. Custom Block Rendering: To render a supported block node differently (e.g., add a "copy code" button to code blocks), implement the `BlockRenderer` type and replace the render prop of `code_block` in the schema.
 
-2. Extended Syntax Support: By default, `commonmark` and `gfm` syntax are supported by @lezer/markdown. To extend syntax support, write a plugin for @lezer/markdown along with a custom block renderer.
+2. Extended Syntax Support: By default, `commonmark` and `gfm` syntax parsers are provided by @lezer/markdown. To extend syntax support, write a plugin to extend `MarkdownParser` and specify provided the extended parser as `RendererOptions.parser` when instantiating `MarkdownRenderer`. A custom block renderer for the extension plugin may be specified in the spec.
 
 ## Limitations
 

@@ -89,7 +89,7 @@ export const renderMark = (
 /**
  * Create mark elements using the schema adapter
  */
-export const nestableMark = (
+const nestableMark = (
   state: RenderState,
   node: SyntaxNode,
 ): {
@@ -115,10 +115,7 @@ export const nestableMark = (
 /**
  * Safely render link elements
  */
-export const renderLinkMark = (
-  state: RenderState,
-  node: SyntaxNode,
-): HTMLElement => {
+const renderLinkMark = (state: RenderState, node: SyntaxNode): HTMLElement => {
   const children = getChildren(node);
   const urlNode = children.find((n) => n.name === "URL");
 

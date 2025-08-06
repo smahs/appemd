@@ -27,8 +27,10 @@ export const ParagraphRenderer: BlockRenderer = (
     return;
   }
 
-  let p = state.dom.getBlockElement();
-  if (p && p instanceof HTMLParagraphElement) {
+  let p: HTMLParagraphElement | undefined;
+  const blockEl = state.dom.getBlockElement();
+  if (blockEl instanceof HTMLParagraphElement) {
+    p = blockEl;
     p.innerHTML = "";
     p.appendChild(rendered);
     return;
@@ -38,23 +40,28 @@ export const ParagraphRenderer: BlockRenderer = (
   p.appendChild(rendered);
 
   if (parent) {
-    state.dom.addOrReplaceInDOM(p, child, parent);
+    const lastChild = parent.lastElementChild;
+    if (lastChild instanceof HTMLParagraphElement) {
+      state.dom.addOrReplaceInDOM(p, lastChild, parent);
+    } else {
+      state.dom.addOrReplaceInDOM(p, child, parent);
+    }
     return;
   }
 
-  state.dom.addOrReplaceInDOM(p, state.dom.getBlockElement());
+  state.dom.addOrReplaceInDOM(p, blockEl);
 };
 
 export const HeadingsRenderer = (state: RenderState, block: SyntaxNode) => {
   const level = Number.parseInt(block.name.at(-1)!, 10);
 
   let h: HTMLHeadingElement | undefined;
-  const el = state.dom.getBlockElement();
-  if (el instanceof HTMLHeadingElement) {
-    h = el;
+  const blockEl = state.dom.getBlockElement();
+  if (blockEl instanceof HTMLHeadingElement) {
+    h = blockEl;
   } else {
     h = createBlock(state.schema, "heading", level);
-    state.dom.addOrReplaceInDOM(h, el);
+    state.dom.addOrReplaceInDOM(h, blockEl);
   }
 
   h.innerHTML = "";
@@ -67,12 +74,12 @@ export const QuoteRenderer = (state: RenderState, block: SyntaxNode) => {
   const children = getNonInstChildren(block);
 
   let quote: HTMLQuoteElement | undefined;
-  const el = state.dom.getBlockElement();
-  if (el instanceof HTMLQuoteElement) {
-    quote = el;
+  const blockEl = state.dom.getBlockElement();
+  if (blockEl instanceof HTMLQuoteElement) {
+    quote = blockEl;
   } else {
     quote = createBlock(state.schema, "blockquote");
-    state.dom.addOrReplaceInDOM(quote, el);
+    state.dom.addOrReplaceInDOM(quote, blockEl);
   }
 
   const lastDOMIndex = (quote.children.length || 1) - 1;
@@ -171,8 +178,8 @@ export const ListRenderer = {
       }
     }
 
-    const lastDOMIndex = (list.children.length || 1) - 1;
-    for (let i = lastDOMIndex; i < children.length; i++) {
+    const lastCellIndex = (list.children.length || 1) - 1;
+    for (let i = lastCellIndex; i < children.length; i++) {
       const leaf = children[i];
       let liEl = list.children.item(i);
       if (!(liEl instanceof HTMLLIElement)) {
@@ -199,15 +206,26 @@ export const TableRenderer = {
 
     const lastDOMIndex = (el?.children.length || 1) - 1;
     for (let i = lastDOMIndex; i < cells.length; i++) {
-      const leaf = createBlock(
-        state.schema,
-        isHeader ? "table_header_cell" : "table_cell",
-      ) as HTMLTableCellElement;
-      el.appendChild(leaf);
+      const cell = cells[i];
+      const iChild = el.children[i];
 
-      renderBlock(state, cells[i], leaf);
+      let cellEl: HTMLTableCellElement | undefined;
+      if (iChild instanceof HTMLTableCellElement) {
+        cellEl = iChild;
+      } else {
+        cellEl = createBlock(
+          state.schema,
+          isHeader ? "table_header_cell" : "table_cell",
+        );
+        state.dom.addOrReplaceInDOM(cellEl, iChild, el);
+      }
+
+      // GFM Table Extension: table cell can only contain inline text
+      cellEl.innerHTML = "";
+      cellEl.append(renderInline(state, cell));
     }
   },
+
   render: (
     state: RenderState,
     block: SyntaxNode,
@@ -215,30 +233,31 @@ export const TableRenderer = {
     child?: Element,
   ) => {
     let table: HTMLTableElement;
-    const current = state.dom.getBlockElement();
-    const el = parent ? child : current;
+    const blockEl = state.dom.getBlockElement();
+    const el = parent ? child : blockEl;
     if (el instanceof HTMLTableElement) {
       table = el as HTMLTableElement;
     } else {
       table = createBlock(state.schema, "table");
       if (parent) state.dom.addOrReplaceInDOM(table, child, parent);
-      else state.dom.addOrReplaceInDOM(table, current);
+      else state.dom.addOrReplaceInDOM(table, blockEl);
     }
 
     const children = getNonInstChildren(block);
-    if (children.length === 0) return table;
-
-    const header = children.find((n) => n.name === "TableHeader");
     const rows = children.filter((n) => n.name === "TableRow");
 
+    let bodyEl = table.querySelector("tbody");
     let rowEl: HTMLTableRowElement | undefined | null;
 
-    if (header) {
+    // Table header appears before any table body rows start
+    if (!bodyEl) {
+      const header = children.find((n) => n.name === "TableHeader");
+      if (!header) return;
+
       let headEl = table.querySelector("thead");
       if (!headEl) {
         headEl = createBlock(state.schema, "table_header");
         state.dom.addOrReplaceInDOM(headEl, undefined, table);
-        //table.prepend(thead);
       }
 
       rowEl = headEl.querySelector("tr");
@@ -247,26 +266,23 @@ export const TableRenderer = {
         state.dom.addOrReplaceInDOM(rowEl, undefined, headEl);
       }
 
-      TableRenderer.renderRow(state, header, rowEl as HTMLTableRowElement, true);
+      TableRenderer.renderRow(state, header, rowEl, true);
+      if (rows.length === 0) return;
     }
 
-    let bodyEl: HTMLTableSectionElement | undefined | null;
     if (!bodyEl) {
-      bodyEl = table.querySelector("tbody")!;
-      if (!bodyEl) {
-        bodyEl = createBlock(state.schema, "table_body");
-        state.dom.addOrReplaceInDOM(bodyEl, undefined, table);
-      }
+      bodyEl = createBlock(state.schema, "table_body");
+      state.dom.addOrReplaceInDOM(bodyEl, undefined, table);
     }
 
-    const lastRowDOMIndex = (rows.length || 1) - 1;
-    for (let i = lastRowDOMIndex; i < rows.length; i++) {
+    const lastRowIndex = (bodyEl.children.length || 1) - 1;
+    for (let i = lastRowIndex; i < rows.length; i++) {
       const el = bodyEl.children.item(i);
       if (el instanceof HTMLTableRowElement) {
         rowEl = el;
       } else {
         const newRow = createBlock(state.schema, "table_row");
-        state.dom.addOrReplaceInDOM(newRow, el, table);
+        state.dom.addOrReplaceInDOM(newRow, el, bodyEl);
         rowEl = newRow;
       }
 

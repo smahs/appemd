@@ -1,4 +1,5 @@
 import type { SyntaxNode } from "@lezer/common";
+import type { MarkdownParser } from "@lezer/markdown";
 
 // Types for solid-js Signal compatibility
 export type Accessor<T> = () => T;
@@ -90,6 +91,7 @@ export interface ScrollConfig {
 }
 
 export interface RendererOptions {
+  parser?: MarkdownParser;
   schema?: SchemaSpec;
   scroll?: Pick<ScrollConfig, "enabled"> & Pick<Partial<ScrollConfig>, "offset">;
 }

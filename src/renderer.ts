@@ -5,6 +5,7 @@ import {
   parser as cmParser,
   Emoji,
   GFM,
+  type MarkdownParser,
   Subscript,
   Superscript,
 } from "@lezer/markdown";
@@ -22,7 +23,9 @@ import type {
 } from "./types.ts";
 import { getChildren, renderBlock, scrollParent } from "./utils.ts";
 
-const parser = cmParser.configure([GFM, Subscript, Superscript, Emoji, Autolink]);
+const defaultParser = (): MarkdownParser => {
+  return cmParser.configure([GFM, Subscript, Superscript, Emoji, Autolink]);
+};
 
 const defaultScrollConfig: ScrollConfig = { enabled: false, offset: 48 };
 
@@ -123,6 +126,7 @@ class DOMTargetState implements DOMState {
  * A Markdown renderer that generates DOM elements from a parsed AST tree.
  */
 export class MarkdownRenderer {
+  private parser: MarkdownParser;
   private schema: SchemaSpec;
   private domState: DOMTargetState;
 
@@ -144,12 +148,14 @@ export class MarkdownRenderer {
   }
 
   constructor(
+    parser: MarkdownParser,
     tree: Tree,
     fragments: readonly TreeFragment[],
     text: string | Accessor<string>,
     setText?: Setter<string>,
     options?: RendererOptions,
   ) {
+    this.parser = parser;
     this._text = text;
     this.setText = setText;
     this.tree = tree;
@@ -164,8 +170,10 @@ export class MarkdownRenderer {
     setText?: Setter<string>,
     options?: RendererOptions,
   ): MarkdownRenderer {
+    const parser = options?.parser ?? defaultParser();
     const tree = parser.parse(text());
     const renderer = new MarkdownRenderer(
+      parser,
       tree,
       TreeFragment.addTree(tree),
       text,
@@ -186,8 +194,10 @@ export class MarkdownRenderer {
     text: string | Accessor<string>,
     options?: RendererOptions,
   ) {
+    const parser = options?.parser ?? defaultParser();
     const tree = parser.parse(text instanceof Function ? text() : text);
     const renderer = new MarkdownRenderer(
+      parser,
       tree,
       TreeFragment.addTree(tree),
       text,
@@ -218,7 +228,7 @@ export class MarkdownRenderer {
       this.setText((text) => text.slice(0, from) + chunk + text.slice(to));
 
     const fragments = TreeFragment.applyChanges(this.fragments, changed, 1);
-    this.tree = parser.parse(this.text, fragments);
+    this.tree = this.parser.parse(this.text, fragments);
     this.fragments = TreeFragment.addTree(this.tree, fragments);
 
     if (this.domState.target) {
