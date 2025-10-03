@@ -51,6 +51,12 @@ describe("MarkdownRenderer Inline", () => {
     expects(equals, "title", "Title", "a");
   });
 
+  it("link inline text with formatted title", () => {
+    render('[**link** _one_](https://example.com "Title")');
+    expects(equals, "title", "Title", "a");
+    expects(contains, "innerHTML", "<strong>link</strong>", "a");
+  });
+
   it("inline code", () => {
     render("`inline code`");
     expects(equals, "textContent", "inline code", "code");

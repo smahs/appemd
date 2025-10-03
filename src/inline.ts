@@ -77,6 +77,9 @@ export const renderMark = (
       span.textContent = state.text.substring(node.from, node.to);
       return span;
     }
+    case "URL":
+      // URLs are handled in the Link nodes
+      return new Text("");
     default: {
       return document.createTextNode(state.text.substring(node.from, node.to));
     }
@@ -117,6 +120,8 @@ const nestableMark = (
  */
 const renderLinkMark = (state: RenderState, node: SyntaxNode): HTMLElement => {
   const children = getChildren(node);
+  const instructions = getInstChildren(node, children);
+
   const urlNode = children.find((n) => n.name === "URL");
 
   if (!urlNode || children.length < 3) {
@@ -126,15 +131,21 @@ const renderLinkMark = (state: RenderState, node: SyntaxNode): HTMLElement => {
     return span;
   }
 
-  const url = state.text.substring(urlNode.from, urlNode.to);
-  const label =
-    children[1].name === "URL"
-      ? state.text.substring(children[1].from, children[1].to) // [URL]
-      : state.text.substring(children[0].to, children[1].from); // [label](URL)
-
   const link = createMark(state.schema, "link");
+  const url = state.text.substring(urlNode.from, urlNode.to);
   link.setAttribute("href", sanitizeUrl(url));
-  link.textContent = label;
+
+  if (children[1].name === "URL") {
+    // Case [URL]: render as plain text
+    link.textContent = state.text.substring(children[1].from, children[1].to);
+  } else {
+    // Case [label](URL): render as markdown inline text
+    const content = state.text.substring(
+      instructions[0].to,
+      instructions[1].from,
+    );
+    link.append(renderInline(state, node, content, children[0].to));
+  }
 
   const titleNode = children.find((n) => n.name === "LinkTitle");
   if (titleNode) {

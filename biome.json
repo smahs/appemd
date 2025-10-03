@@ -8,7 +8,7 @@
     "includes": [
       "*.{json,jsonc,html}",
       "**/*.{ts,tsx,js,jsx,json,jsonc,html,css}",
-      "!**/dist/**"
+      "!**/dist"
     ],
     "ignoreUnknown": false
   },
@@ -37,9 +37,7 @@
         "noNonNullAssertion": "off",
         "noParameterAssign": "off"
       },
-      "nursery": {
-        "noTsIgnore": "off"
-      }
+      "nursery": {}
     }
   },
   "javascript": {

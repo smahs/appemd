@@ -1,8 +1,7 @@
 import get from "just-safe-get";
 import { expect, vi } from "vitest";
-
-import type { Accessor, Setter } from "../src";
 import { MarkdownRenderer } from "../src";
+import type { Accessor, Setter } from "../src/types.ts";
 
 type Assertion = (el: HTMLElement, prop: string, value?: unknown) => void;
 
