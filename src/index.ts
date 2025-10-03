@@ -1,10 +1,12 @@
-export * from "./inline.ts";
+export { renderInline } from "./inline.ts";
 export { MarkdownRenderer } from "./renderer.ts";
 export * from "./spec.ts";
 export type {
+  BlockCheckpoint,
   BlockElements,
   BlockRenderer,
   BlockSpec,
+  Checkpoint,
   DOMState,
   NodeSpec,
   RendererOptions,
@@ -12,12 +14,4 @@ export type {
   SchemaSpec,
   ScrollConfig,
 } from "./types.ts";
-export {
-  createBlock,
-  getChildren,
-  getInlineChildren,
-  getInstChildren,
-  getNodesByTag,
-  getNonInstChildren,
-  renderBlock,
-} from "./utils.ts";
+export * from "./utils.ts";

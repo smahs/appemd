@@ -1,7 +1,7 @@
 import type { SyntaxNode } from "@lezer/common";
 import type { MarkdownParser } from "@lezer/markdown";
 
-// Types for solid-js Signal compatibility
+// Types for solid-js compatibility
 export type Accessor<T> = () => T;
 export type Setter<T> = {
   (value: T): void;
@@ -43,10 +43,8 @@ export type TargetElement = Element | undefined | null;
 export type Target = TargetElement | Accessor<TargetElement>;
 
 export interface DOMState {
-  // block: number;
   scrollOffset: number;
   target: TargetElement;
-  getBlockElement: (block?: number) => Element | undefined;
   addOrReplaceInDOM: (
     newEl: Node,
     oldEl?: Node | null,
@@ -54,10 +52,24 @@ export interface DOMState {
   ) => void;
 }
 
+export interface BlockCheckpoint {
+  index: number;
+  name: string;
+  from: number;
+  to: number;
+}
+
+export interface Checkpoint {
+  block?: BlockCheckpoint;
+  position: number;
+}
+
 export interface RenderState {
   schema: SchemaSpec;
   dom: DOMState;
   text: string;
+  checkpoint: Checkpoint;
+  getBlockElement: (block?: number) => Element | undefined;
 }
 
 export type BlockRenderer = (

@@ -1,71 +1,110 @@
 import type { SyntaxNode } from "@lezer/common";
-import { LezerTagMap } from "./spec";
+import { LezerMarksMap, LezerTagMap, schemaSpec } from "./spec";
 import type { RenderState, SchemaSpec } from "./types";
 import {
   createElement,
   getChildren,
   getInlineChildren,
   getInstChildren,
-  sanitizeUrl,
 } from "./utils";
 
 export const renderInline = (
   state: RenderState,
   node: SyntaxNode,
+  element: HTMLElement,
   content?: string,
   offset: number = 0,
-): DocumentFragment => {
-  const fragment = document.createDocumentFragment();
-  const children = getInlineChildren(node);
+) => {
+  const fulltext = content ?? state.text;
+  let from = state.checkpoint.position - offset;
+  let to = node.to - offset;
 
-  const addText = (start: number, end: number) => {
-    const sub = (content ?? state.text).substring(start, end);
-    if (sub) fragment.appendChild(document.createTextNode(sub));
-  };
+  // Content has been truncated and moved to the newly created next block
+  if (from > to) {
+    truncateElement(element, from, to);
+    state.checkpoint.position = to;
+    return;
+  }
 
-  let startPos = node.from - offset;
-  let endPos = (children[0]?.from ?? node.to) - offset;
+  const allMarkNodes = getInlineChildren(node);
+
+  let markAtFrom: SyntaxNode | undefined;
+  for (const mark of allMarkNodes.reverse()) {
+    if (mark.from <= from && mark.to > from) {
+      markAtFrom = mark;
+      break;
+    }
+
+    if (mark.to < from) break;
+  }
+
+  const lastDOMChild = Array.from(element.childNodes).at(-1);
+  const areSame = compareDOMNodes(markAtFrom, lastDOMChild);
+  if (lastDOMChild && markAtFrom && !areSame) {
+    from = markAtFrom.from;
+    truncateNode(lastDOMChild, from);
+  }
+
+  const markNodes = allMarkNodes.filter((n) => n.from >= from);
+  let textNode = isTextNode(lastDOMChild)
+    ? lastDOMChild
+    : createTextNode(element);
 
   // Add text content before any mark node
-  addText(startPos, endPos);
-  startPos = endPos;
+  const textBefore = (!lastDOMChild || isTextNode(lastDOMChild)) && !markAtFrom;
+  if (textBefore) {
+    to = markNodes[0] ? markNodes[0].from - offset : to;
+    addText(textNode, fulltext, from, to);
+    from = to;
+  }
 
-  for (const child of children) {
+  for (const mark of markNodes) {
     // Add any text between the previous and this node
-    if (startPos < child.from - offset) addText(startPos, child.from - offset);
-    fragment.appendChild(renderMark(state, child));
-    startPos = child.to - offset;
+    if (from <= mark.from - offset) {
+      to = mark.from - offset;
+      addText(textNode, fulltext, from, to);
+    }
+
+    element.appendChild(renderMark(state, mark));
+    from = mark.to - offset;
+    textNode = createTextNode(element);
   }
 
   // Add remaining text content after the last mark node
-  endPos = node.to - offset;
-  if (startPos < endPos) addText(startPos, endPos);
+  to = node.to - offset;
+  if (from < to) addText(textNode, fulltext, from, to);
 
-  return fragment;
+  state.checkpoint.position = to;
 };
 
 /**
  * Render individual inline nodes
  */
-export const renderMark = (
-  state: RenderState,
-  node: SyntaxNode,
-): HTMLElement | Text => {
-  let el: HTMLElement | undefined, content: string | undefined, start: number;
+const renderMark = (state: RenderState, node: SyntaxNode): HTMLElement | Text => {
+  let el: HTMLElement | undefined;
 
   switch (node.name) {
     case "StrongEmphasis":
     case "Emphasis":
     case "Strikethrough":
     case "Subscript":
-    case "Superscript":
-    case "InlineCode": {
-      ({ el, content, start } = nestableMark(state, node));
+    case "Superscript": {
+      const markType = LezerTagMap[node.name];
+      el = createMark(state.schema, markType);
       break;
+    }
+    case "InlineCode": {
+      el = createMark(state.schema, "code");
+      const { content } = getContent(state, node);
+      const textContent = createTextNode(el);
+      textContent.nodeValue = content;
+      state.checkpoint.position = node.to;
+      return el;
     }
     case "HardBreak":
       return createMark(state.schema, "hard_break");
     case "Escape":
+      // TODO to be handled
       return document.createTextNode(
         state.text.substring(node.from + 1, node.to),
       );
@@ -77,39 +116,20 @@ export const renderMark = (
       span.textContent = state.text.substring(node.from, node.to);
       return span;
     }
-    default: {
-      return document.createTextNode(state.text.substring(node.from, node.to));
-    }
+    default:
+      throw new Error(`Unknown mark node: ${node.name}`);
+    // default: {
+    //   return document.createTextNode(state.text.substring(node.from, node.to));
+    // }
   }
 
-  el.append(renderInline(state, node, content, start));
+  const { content, markLength } = getContent(state, node);
+
+  state.checkpoint.position = 0;
+  renderInline(state, node, el, content, markLength);
+  state.checkpoint.position = node.to;
+
   return el;
-};
-
-/**
- * Create mark elements using the schema adapter
- */
-const nestableMark = (
-  state: RenderState,
-  node: SyntaxNode,
-): {
-  el: HTMLElement;
-  content: string;
-  start: number;
-} => {
-  const markType = LezerTagMap[node.name];
-  const el = createMark(state.schema, markType);
-
-  let start = node.from;
-  let end = node.to;
-
-  // Shift the content positions to remove any mark delimiters
-  const marks = getInstChildren(node);
-  if (marks.length > 0) start = marks[0].to;
-  if (marks.length > 1) end = marks[marks.length - 1].from;
-
-  const content = state.text.substring(start, end);
-  return { el, content, start };
 };
 
 /**
@@ -145,9 +165,110 @@ const renderLinkMark = (state: RenderState, node: SyntaxNode): HTMLElement => {
   return link;
 };
 
-export const createMark = (schema: SchemaSpec, markType: string): HTMLElement => {
+const getContent = (state: RenderState, node: SyntaxNode) => {
+  const marks = getInstChildren(node);
+
+  let start = node.from,
+    end = node.to,
+    markLength = 0;
+  if (marks.length > 0) {
+    start = marks[0].to;
+    markLength = marks[0].to - marks[0].from;
+  }
+  if (marks.length > 1) end = marks[marks.length - 1].from;
+
+  const content = state.text.substring(start, end);
+  return { content, start, end, markLength };
+};
+
+// --- Type guards/utils ---
+
+const isTextNode = (node: Node | ChildNode | null | undefined): node is Text => {
+  return node?.nodeType === Node.TEXT_NODE;
+};
+
+const getNodeType = (node: Node): string => {
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    return (node as Element).tagName.toLowerCase();
+  }
+  if (isTextNode(node)) {
+    return "#text";
+  }
+  return node.nodeName;
+};
+
+const compareDOMNodes = (node?: SyntaxNode, mark?: Node): boolean => {
+  if (!node || !mark) return false;
+
+  const nodeIdentifier = LezerMarksMap[node.name];
+  if (!nodeIdentifier) {
+    return false;
+  }
+
+  const markSpec = schemaSpec.marks[nodeIdentifier];
+  if (!markSpec) {
+    return false;
+  }
+
+  const expectedTag = markSpec.tag;
+  const actualTag = getNodeType(mark);
+
+  return expectedTag === actualTag;
+};
+
+const addText = (textNode: Text, content: string, from: number, to: number) => {
+  const sub = content.substring(from, to);
+  if (sub) textNode.nodeValue += sub;
+};
+
+const createTextNode = (el?: HTMLElement) => {
+  const textNode = document.createTextNode("");
+  if (el) el.appendChild(textNode);
+  return textNode;
+};
+
+const createMark = (schema: SchemaSpec, markType: string): HTMLElement => {
   const spec = schema.marks[markType];
   if (!spec) throw new Error(`Unknown mark type: ${markType}`);
 
   return createElement(spec);
+};
+
+/**
+ * Sanitize URLs to prevent XSS
+ */
+const sanitizeUrl = (url: string): string => {
+  try {
+    const parsed = new URL(url, window.location.href);
+    const allowedProtocols = ["http:", "https:", "mailto:", "tel:"];
+    return allowedProtocols.includes(parsed.protocol) ? url : "#";
+  } catch {
+    return "#";
+  }
+};
+
+const truncateNode = (domNode: Node, from: number) => {
+  const parent = domNode?.parentNode;
+  if (isTextNode(domNode) && (domNode.nodeValue?.length ?? -1) > from) {
+    const toRemove = domNode.splitText(from);
+    parent?.removeChild(toRemove);
+  } else {
+    parent?.removeChild(domNode);
+  }
+};
+
+const truncateElement = (element: HTMLElement, from: number, to: number) => {
+  let lastChild = element.lastChild;
+  if (lastChild?.nodeType === Node.ELEMENT_NODE) lastChild = lastChild.lastChild;
+
+  if (!isTextNode(lastChild))
+    throw new Error(`Unknow node type: ${lastChild?.nodeType}`);
+
+  const lastChildLen = lastChild.nodeValue?.length;
+  const offset = from - to;
+  if (!lastChildLen || lastChildLen < offset)
+    throw new Error(`Text mismatch error: ${lastChildLen} | ${offset}`);
+
+  const toDelete = lastChild.splitText(lastChildLen - offset);
+  element.removeChild(toDelete);
 };
