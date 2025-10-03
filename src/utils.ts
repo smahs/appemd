@@ -9,49 +9,6 @@ import type {
   SchemaSpec,
 } from "./types";
 
-export const isNil = (val: unknown): val is null | undefined => val == null;
-
-export const scrollParent = (
-  el?: HTMLElement | null,
-): HTMLElement | undefined => {
-  if (!el) return undefined;
-
-  while (el && el !== document.documentElement) {
-    const style = getComputedStyle(el);
-    if (style.overflowY === "auto" || style.overflowY === "scroll") {
-      return el;
-    }
-    el = el.parentElement;
-  }
-};
-
-/**
- * Sanitize URLs to prevent XSS
- */
-export const sanitizeUrl = (url: string): string => {
-  try {
-    const parsed = new URL(url, window.location.href);
-    const allowedProtocols = ["http:", "https:", "mailto:", "tel:"];
-    return allowedProtocols.includes(parsed.protocol) ? url : "#";
-  } catch {
-    return "#";
-  }
-};
-
-export const renderBlock = (
-  state: RenderState,
-  block: SyntaxNode,
-  parent?: Element,
-  child?: Element,
-) => {
-  if (block.name === "CommentBlock") return;
-
-  const defaultRenderFn = state.schema.blocks.paragraph.render!;
-  const nodeName = LezerTagMap[block.name];
-  const renderFn = state.schema.blocks[nodeName]?.render || defaultRenderFn;
-  renderFn(state, block, parent, child);
-};
-
 export const createElement = (
   spec: NodeSpec | BlockSpec,
   tag?: string,
@@ -76,22 +33,6 @@ export const createElement = (
   }
 
   return element;
-};
-
-export const createBlock = <K extends keyof BlockElements>(
-  schema: SchemaSpec,
-  name: K,
-  level?: number,
-): BlockElements[K] => {
-  const spec = schema.blocks[name as keyof typeof schema.blocks];
-  if (!spec) throw new Error(`Unknown node type: ${name}`);
-
-  let tag: typeof spec.tag | undefined;
-  if (name === "heading" && level) {
-    tag = `h${level}`;
-  }
-
-  return createElement(spec, tag) as BlockElements[K];
 };
 
 export const getChildren = (node: SyntaxNode) => {
@@ -138,11 +79,43 @@ export const getNonInstChildren = (
   return getNodesByTag(children, [], [tags.processingInstruction]);
 };
 
-export const getInlineChildren = (node: SyntaxNode) => {
-  const children = getChildren(node);
+export const getInlineChildren = (node: SyntaxNode, from: number = 0) => {
+  const children = getChildren(node).filter((n) => n.from >= from);
 
   // Handle HardBreak as special case (it's an instruction node)
   return getNonInstChildren(undefined, children)
     .concat(children.filter((c) => c.name === "HardBreak"))
     .sort((n1, n2) => n1.from - n2.from);
+};
+
+// --- Below block utils are here to avoid circular imports
+
+export const createBlock = <K extends keyof BlockElements>(
+  schema: SchemaSpec,
+  name: K,
+  level?: number,
+): BlockElements[K] => {
+  const spec = schema.blocks[name as keyof typeof schema.blocks];
+  if (!spec) throw new Error(`Unknown node type: ${name}`);
+
+  let tag: typeof spec.tag | undefined;
+  if (name === "heading" && level) {
+    tag = `h${level}`;
+  }
+
+  return createElement(spec, tag) as BlockElements[K];
+};
+
+export const renderBlock = (
+  state: RenderState,
+  block: SyntaxNode,
+  parent?: Element,
+  child?: Element,
+) => {
+  if (block.name === "CommentBlock") return;
+
+  const defaultRenderFn = state.schema.blocks.paragraph.render!;
+  const nodeName = LezerTagMap[block.name];
+  const renderFn = state.schema.blocks[nodeName]?.render || defaultRenderFn;
+  renderFn(state, block, parent, child);
 };

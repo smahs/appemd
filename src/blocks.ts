@@ -16,47 +16,40 @@ export const HorizontalRuleRenderer = (state: RenderState) => {
 
 export const ParagraphRenderer: BlockRenderer = (
   state: RenderState,
-  block: SyntaxNode,
+  node: SyntaxNode,
   parent?: Element,
   child?: Element,
 ) => {
-  const rendered = renderInline(state, block);
-  if (parent && child instanceof HTMLParagraphElement) {
-    child.innerHTML = "";
-    child.appendChild(rendered);
-    return;
-  }
+  const createP = () => {
+    p = createBlock(state.schema, "paragraph");
+    state.dom.addOrReplaceInDOM(p, child, parent);
+    return p;
+  };
 
+  const block = state.getBlockElement();
   let p: HTMLParagraphElement | undefined;
-  const blockEl = state.dom.getBlockElement();
-  if (blockEl instanceof HTMLParagraphElement) {
-    p = blockEl;
-    p.innerHTML = "";
-    p.appendChild(rendered);
-    return;
-  }
-
-  p = createBlock(state.schema, "paragraph");
-  p.appendChild(rendered);
-
   if (parent) {
-    const lastChild = parent.lastElementChild;
-    if (lastChild instanceof HTMLParagraphElement) {
-      state.dom.addOrReplaceInDOM(p, lastChild, parent);
-    } else {
+    if (child instanceof HTMLParagraphElement) p = child;
+    else {
+      p = createP();
       state.dom.addOrReplaceInDOM(p, child, parent);
     }
-    return;
+  } else {
+    if (block instanceof HTMLParagraphElement) p = block;
+    else {
+      p = createP();
+      state.dom.addOrReplaceInDOM(p, block);
+    }
   }
 
-  state.dom.addOrReplaceInDOM(p, blockEl);
+  renderInline(state, node, p);
 };
 
 export const HeadingsRenderer = (state: RenderState, block: SyntaxNode) => {
   const level = Number.parseInt(block.name.at(-1)!, 10);
 
   let h: HTMLHeadingElement | undefined;
-  const blockEl = state.dom.getBlockElement();
+  const blockEl = state.getBlockElement();
   if (blockEl instanceof HTMLHeadingElement) {
     h = blockEl;
   } else {
@@ -67,14 +60,17 @@ export const HeadingsRenderer = (state: RenderState, block: SyntaxNode) => {
   h.innerHTML = "";
   const offset = block.from + level + 1;
   const text = state.text.substring(offset, block.to);
-  h.appendChild(renderInline(state, block, text, offset));
+
+  state.checkpoint.position -= block.from + offset;
+  renderInline(state, block, h, text, offset);
+  state.checkpoint.position = block.to;
 };
 
 export const QuoteRenderer = (state: RenderState, block: SyntaxNode) => {
   const children = getNonInstChildren(block);
 
   let quote: HTMLQuoteElement | undefined;
-  const blockEl = state.dom.getBlockElement();
+  const blockEl = state.getBlockElement();
   if (blockEl instanceof HTMLQuoteElement) {
     quote = blockEl;
   } else {
@@ -110,7 +106,7 @@ export const CodeBlockRenderer = (
   if (codeNodes.length === 0) return;
 
   let pre: HTMLPreElement;
-  const current = state.dom.getBlockElement();
+  const current = state.getBlockElement();
   const el = parent ? child : current;
   if (el instanceof HTMLPreElement) {
     pre = el as HTMLPreElement;
@@ -141,7 +137,12 @@ export const ListRenderer = {
     const children = getNonInstChildren(node);
     const lastDOMIndex = (el?.children.length || 1) - 1;
     for (let i = lastDOMIndex; i < children.length; i++) {
-      renderBlock(state, children[i], el, el?.children[i]);
+      const node = children[i];
+
+      // Move position forward to remove the markers, if at the start of a list item
+      state.checkpoint.position = Math.max(state.checkpoint.position, node.from);
+
+      renderBlock(state, node, el, el?.children[i]);
     }
   },
   render: (
@@ -153,7 +154,7 @@ export const ListRenderer = {
     const isOrdered = block.name === "OrderedList";
 
     let list: HTMLOListElement | HTMLUListElement;
-    const current = state.dom.getBlockElement();
+    const current = state.getBlockElement();
     const el = parent ? child : current;
     if (el instanceof HTMLOListElement || el instanceof HTMLUListElement) {
       list = el as HTMLOListElement | HTMLUListElement;
@@ -178,8 +179,8 @@ export const ListRenderer = {
       }
     }
 
-    const lastCellIndex = (list.children.length || 1) - 1;
-    for (let i = lastCellIndex; i < children.length; i++) {
+    const lastDOMIndex = (list.children.length || 1) - 1;
+    for (let i = lastDOMIndex; i < children.length; i++) {
       const leaf = children[i];
       let liEl = list.children.item(i);
       if (!(liEl instanceof HTMLLIElement)) {
@@ -222,7 +223,7 @@ export const TableRenderer = {
 
       // GFM Table Extension: table cell can only contain inline text
       cellEl.innerHTML = "";
-      cellEl.append(renderInline(state, cell));
+      renderInline(state, cell, cellEl);
     }
   },
 
@@ -233,7 +234,7 @@ export const TableRenderer = {
     child?: Element,
   ) => {
     let table: HTMLTableElement;
-    const blockEl = state.dom.getBlockElement();
+    const blockEl = state.getBlockElement();
     const el = parent ? child : blockEl;
     if (el instanceof HTMLTableElement) {
       table = el as HTMLTableElement;

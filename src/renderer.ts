@@ -1,4 +1,4 @@
-import type { Tree } from "@lezer/common";
+import type { SyntaxNode, Tree } from "@lezer/common";
 import { TreeFragment } from "@lezer/common";
 import {
   Autolink,
@@ -9,9 +9,12 @@ import {
   Subscript,
   Superscript,
 } from "@lezer/markdown";
+
 import { schemaSpec } from "./spec.ts";
 import type {
   Accessor,
+  BlockCheckpoint,
+  Checkpoint,
   DOMState,
   RendererOptions,
   RenderState,
@@ -21,13 +24,25 @@ import type {
   Target,
   TargetElement,
 } from "./types.ts";
-import { getChildren, renderBlock, scrollParent } from "./utils.ts";
+import { getChildren, renderBlock } from "./utils.ts";
 
 const defaultParser = (): MarkdownParser => {
   return cmParser.configure([GFM, Subscript, Superscript, Emoji, Autolink]);
 };
 
 const defaultScrollConfig: ScrollConfig = { enabled: false, offset: 48 };
+
+const scrollParent = (el?: HTMLElement | null): HTMLElement | undefined => {
+  if (!el) return undefined;
+
+  while (el && el !== document.documentElement) {
+    const style = getComputedStyle(el);
+    if (style.overflowY === "auto" || style.overflowY === "scroll") {
+      return el;
+    }
+    el = el.parentElement;
+  }
+};
 
 /**
  * Provides DOM interactions, including holding reference to the target element,
@@ -37,7 +52,7 @@ class DOMTargetState implements DOMState {
   /**
    * The index of the current block being rendered.
    */
-  block: number = 0;
+  // block: number = 0;
 
   /**
    * Any additional offset to be used for determining whether to
@@ -107,18 +122,18 @@ class DOMTargetState implements DOMState {
     if (fromBottom <= this.scrollOffset + this.scrollConfig.offset)
       el?.scrollTo({ top, behavior: "instant" });
   }
+}
 
-  /**
-   * Gets the element by index from the target element.
-   *
-   * @param index - The index of the block element to retrieve
-   * @returns The block element or undefined
-   */
-  getBlockElement(index: number = this.block): Element | undefined {
-    const existingEl = this.target?.children[index];
-    if (existingEl && !(existingEl instanceof Element))
-      throw new Error("The block element type mismatch");
-    return existingEl;
+export class RendererCheckpoint implements Checkpoint {
+  block?: BlockCheckpoint;
+  position: number;
+
+  constructor() {
+    this.position = 0;
+  }
+
+  setBlock(block: BlockCheckpoint) {
+    this.block = block;
   }
 }
 
@@ -129,6 +144,7 @@ export class MarkdownRenderer {
   private parser: MarkdownParser;
   private schema: SchemaSpec;
   private domState: DOMTargetState;
+  private checkpoint: RendererCheckpoint;
 
   private tree: Tree;
   private fragments: readonly TreeFragment[];
@@ -144,7 +160,14 @@ export class MarkdownRenderer {
       schema: this.schema,
       dom: this.domState,
       text: this.text,
+      checkpoint: this.checkpoint,
+      getBlockElement: this.getBlockElement,
     };
+  }
+
+  set target(target: Target) {
+    this.domState.target = target;
+    this.renderDOM();
   }
 
   constructor(
@@ -162,6 +185,8 @@ export class MarkdownRenderer {
     this.fragments = fragments;
     this.schema = options?.schema ?? schemaSpec;
     this.domState = new DOMTargetState(options?.scroll);
+    this.checkpoint = new RendererCheckpoint();
+    this.getBlockElement = this.getBlockElement.bind(this);
   }
 
   static init(
@@ -181,10 +206,7 @@ export class MarkdownRenderer {
       options,
     );
 
-    if (target) {
-      renderer.domState.target = target;
-      renderer.renderDOM();
-    }
+    if (target) renderer.target = target;
 
     return renderer;
   }
@@ -244,16 +266,40 @@ export class MarkdownRenderer {
     const children = getChildren(this.tree.cursor().node);
     if (!children.length) return;
 
-    if (this.domState.block >= children.length) {
-      const el = this.domState.getBlockElement();
+    let blockIndex = this.checkpoint.block?.index ?? -1;
+
+    // console.log(blockIndex, children.length, { ...this.checkpoint.block });
+    while (blockIndex > children.length) {
+      const el = this.getBlockElement(blockIndex);
       if (el) this.domState.target.removeChild(el);
-      this.domState.block = children.length - 1;
+      blockIndex -= 1;
     }
 
-    for (let i = this.domState.block; i < children.length; i++) {
+    if (blockIndex < 0) blockIndex = 0;
+
+    for (let i = blockIndex; i < children.length; i++) {
       const block = children[i];
-      this.domState.block = i;
+      this.checkpoint.setBlock(this.checkpointBlock(i, block));
       renderBlock(this.state, block);
     }
+  }
+
+  private checkpointBlock(index: number, node: SyntaxNode): BlockCheckpoint {
+    return { index, from: node.from, to: node.to, name: node.name };
+  }
+
+  /**
+   * Gets the child element by index from the target element.
+   *
+   * @param index - The index of the block element to retrieve
+   * @returns The block element or undefined
+   */
+  getBlockElement(index?: number): Element | undefined {
+    index = index ?? this.checkpoint.block?.index ?? 0;
+    const existingEl = this.domState.target?.children[index];
+    if (existingEl && !(existingEl instanceof Element))
+      throw new Error("The block element type mismatch");
+
+    return existingEl;
   }
 }
