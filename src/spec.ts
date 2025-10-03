@@ -9,7 +9,19 @@ import {
 } from "./blocks.ts";
 import type { SchemaSpec } from "./types.ts";
 
+export const LezerMarksMap: Record<string, string> = {
+  StrongEmphasis: "strong",
+  Emphasis: "em",
+  Strikethrough: "strikethrough",
+  Subscript: "subscript",
+  Superscript: "superscript",
+  InlineCode: "code",
+  Hardbreak: "hard_break",
+  Link: "link",
+};
+
 export const LezerTagMap: Record<string, string> = {
+  ...LezerMarksMap,
   Paragraph: "paragraph",
   ATXHeading1: "heading",
   ATXHeading2: "heading",
@@ -26,14 +38,6 @@ export const LezerTagMap: Record<string, string> = {
   HorizontalRule: "horizontal_rule",
   BulletList: "bullet_list",
   OrderedList: "ordered_list",
-  StrongEmphasis: "strong",
-  Emphasis: "em",
-  Strikethrough: "strikethrough",
-  Subscript: "subscript",
-  Superscript: "superscript",
-  InlineCode: "code",
-  Hardbreak: "hard_break",
-  Link: "link",
 };
 
 export const schemaSpec: SchemaSpec = {

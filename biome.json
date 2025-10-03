@@ -36,8 +36,7 @@
       "style": {
         "noNonNullAssertion": "off",
         "noParameterAssign": "off"
-      },
-      "nursery": {}
+      }
     }
   },
   "javascript": {
