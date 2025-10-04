@@ -1,0 +1,30 @@
+export const LezerMarksMap: Record<string, string> = {
+  StrongEmphasis: "strong",
+  Emphasis: "em",
+  Strikethrough: "strikethrough",
+  Subscript: "subscript",
+  Superscript: "superscript",
+  InlineCode: "code",
+  Hardbreak: "hard_break",
+  Link: "link",
+};
+
+export const LezerTagMap: Record<string, string> = {
+  ...LezerMarksMap,
+  Paragraph: "paragraph",
+  ATXHeading1: "heading",
+  ATXHeading2: "heading",
+  ATXHeading3: "heading",
+  ATXHeading4: "heading",
+  ATXHeading5: "heading",
+  ATXHeading6: "heading",
+  SetextHeading1: "heading",
+  SetextHeading2: "heading",
+  CodeBlock: "code_block",
+  FencedCode: "code_block",
+  Table: "table",
+  Blockquote: "blockquote",
+  HorizontalRule: "horizontal_rule",
+  BulletList: "bullet_list",
+  OrderedList: "ordered_list",
+};

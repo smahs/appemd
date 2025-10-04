@@ -59,10 +59,9 @@ export const HeadingsRenderer = (state: RenderState, block: SyntaxNode) => {
 
   h.innerHTML = "";
   const offset = block.from + level + 1;
-  const text = state.text.substring(offset, block.to);
 
   state.checkpoint.position -= block.from + offset;
-  renderInline(state, block, h, text, offset);
+  renderInline(state, block, h, offset);
   state.checkpoint.position = block.to;
 };
 
