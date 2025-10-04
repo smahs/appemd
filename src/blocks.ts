@@ -57,12 +57,7 @@ export const HeadingsRenderer = (state: RenderState, block: SyntaxNode) => {
     state.dom.addOrReplaceInDOM(h, blockEl);
   }
 
-  h.innerHTML = "";
-  const offset = block.from + level + 1;
-
-  state.checkpoint.position -= block.from + offset;
-  renderInline(state, block, h, offset);
-  state.checkpoint.position = block.to;
+  renderInline(state, block, h, level + 1);
 };
 
 export const QuoteRenderer = (state: RenderState, block: SyntaxNode) => {
@@ -221,7 +216,7 @@ export const TableRenderer = {
       }
 
       // GFM Table Extension: table cell can only contain inline text
-      cellEl.innerHTML = "";
+      // cellEl.innerHTML = "";
       renderInline(state, cell, cellEl);
     }
   },

@@ -20,23 +20,14 @@ export const renderInline = (
   skip = 0,
 ) => {
   const tree = buildInlineNodeTree(state, node);
-
-  if (skip > 0) {
-    tree.from += skip;
-    const firstChild = tree.children[0]!;
-    firstChild.from += skip;
-    tree.children[0] = firstChild;
-  }
+  if (skip > 0) tree.children[0].from += skip;
 
   const childVNodes = tree.children?.map((iNode) => iNodeToVNode(state, iNode));
 
   const newVNode = h(element.tagName, {}, childVNodes);
   const prevVNode = elementVNodeCache.get(element);
-  if (prevVNode) {
-    patch(prevVNode, newVNode);
-  } else {
-    patch(element, newVNode);
-  }
+  if (prevVNode) patch(prevVNode, newVNode);
+  else patch(element, newVNode);
 
   elementVNodeCache.set(element, newVNode);
 };
@@ -49,7 +40,7 @@ function buildInlineNodeTree(
 ): InlineNode {
   if (!children) {
     if (isSyntaxNode(node)) children = getNonInstChildren(node);
-    else throw new Error("Either full SyntaxNode or children array expected");
+    else throw new Error("Either SyntaxNode or children array is required");
   }
 
   children.sort((a, b) => a.from - b.from);
@@ -86,7 +77,7 @@ function buildInlineNodeTree(
     }
     root.children.push(childNode);
 
-    // Move the position
+    // Move the cursor to the end of child node
     from = child.to;
   }
 
@@ -193,7 +184,7 @@ const nestableMark = (state: RenderState, iNode: InlineNode): VNode => {
   let start = node.from;
   let end = node.to;
 
-  // Shift the content positions to remove any mark delimiters
+  // Shift the cursor to remove any mark delimiters
   const marks = getInstChildren(node);
   if (marks.length > 0) start = marks[0].to;
   if (marks.length > 1) end = marks[marks.length - 1].from;
