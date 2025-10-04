@@ -1,6 +1,6 @@
 import type { SyntaxNode } from "@lezer/common";
 import { getStyleTags, type Tag, tags } from "@lezer/highlight";
-import { LezerTagMap } from "./spec";
+import { LezerTagMap } from "./consts.ts";
 import type {
   BlockElements,
   BlockSpec,
