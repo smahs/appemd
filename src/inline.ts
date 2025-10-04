@@ -1,87 +1,88 @@
 import type { SyntaxNode } from "@lezer/common";
-import {
-  attributesModule,
-  classModule,
-  h,
-  init,
-  propsModule,
-  styleModule,
-  type VNode,
-} from "snabbdom";
+import { attributesModule, h, init, propsModule, type VNode } from "snabbdom";
 import { LezerMarksMap, LezerTagMap } from "./consts";
-import type { InlineNode, RenderState } from "./types.ts";
-import { getInstChildren, getNonInstChildren } from "./utils.ts";
+import type { BoundedNode, InlineNode, RenderState } from "./types.ts";
+import { getChildren, getInstChildren, getNonInstChildren } from "./utils.ts";
 
 // Initialize snabbdom with the modules we need
-const patch = init([classModule, propsModule, attributesModule, styleModule]);
+const patch = init([propsModule, attributesModule]);
 
 // Cache for the previous VNode to enable efficient diffing
 const elementVNodeCache = new WeakMap<HTMLElement, VNode>();
 
+/*
+ * Build the new virtual tree and patch with the DOM element
+ */
 export const renderInline = (
   state: RenderState,
   node: SyntaxNode,
   element: HTMLElement,
   skip = 0,
 ) => {
-  // Build inline segments from the node
-  const tree = buildInlineNodeTree(node, skip);
-  console.log(tree, state.text.substring(tree.from, tree.to));
+  const tree = buildInlineNodeTree(state, node);
 
-  // Create VNodes from the segments
+  if (skip > 0) {
+    tree.from += skip;
+    const firstChild = tree.children[0]!;
+    firstChild.from += skip;
+    tree.children[0] = firstChild;
+  }
+
   const childVNodes = tree.children?.map((iNode) => iNodeToVNode(state, iNode));
 
-  // Create the new VNode
   const newVNode = h(element.tagName, {}, childVNodes);
-
-  // Get the previous VNode from cache or create a new one
-  const previousVNode = elementVNodeCache.get(element);
-
-  // If we have a previous VNode, patch it with the new one
-  if (previousVNode) {
-    patch(previousVNode, newVNode);
+  const prevVNode = elementVNodeCache.get(element);
+  if (prevVNode) {
+    patch(prevVNode, newVNode);
   } else {
-    // First time rendering, just patch the element
     patch(element, newVNode);
   }
 
-  // Store the current VNode for the next render
   elementVNodeCache.set(element, newVNode);
 };
 
 // Build inline segments from a SyntaxNode
-function buildInlineNodeTree(node: SyntaxNode, skip: number): InlineNode {
-  const children = getNonInstChildren(node);
+function buildInlineNodeTree(
+  state: RenderState,
+  node: BoundedNode,
+  children?: SyntaxNode[],
+): InlineNode {
+  if (!children) {
+    if (isSyntaxNode(node)) children = getNonInstChildren(node);
+    else throw new Error("Either full SyntaxNode or children array expected");
+  }
+
   children.sort((a, b) => a.from - b.from);
 
-  const root: InlineNode = inlineNode(node, skip);
-
+  const root: InlineNode = inlineNode(node);
   if (children.length === 0) {
-    root.children.push(textNode(node, skip));
+    root.children.push(textNode(node));
     return root;
   }
 
   let { from, to } = node;
 
-  // Skip is reset after the first Text node is inserted
   for (const child of children) {
     // Add any plain text from `from` to the start of this child
-    if (from < child.from) {
-      root.children.push(textNodeFT(from, child.from, skip));
-      skip = 0;
-    }
+    if (from < child.from) root.children.push(textNodeFT(from, child.from));
 
     // Add the marked text
-    const childNode: InlineNode = inlineNode(child, skip);
-    skip = 0;
-    const markType = LezerMarksMap[child.type.name];
-    if (markType) {
-      const grandChildren = getNonInstChildren(child);
-      grandChildren.forEach((gc) => {
-        childNode.children.push(buildInlineNodeTree(gc, skip));
-      });
-    } else {
-      childNode.children.push(textNode(child, skip));
+    const childNode: InlineNode = inlineNode(child);
+    switch (child.type.name) {
+      case "Link":
+        buildLinkInlineNode(state, childNode);
+        break;
+      default: {
+        const markType = LezerMarksMap[child.type.name];
+        if (markType) {
+          const grandChildren = getNonInstChildren(child);
+          grandChildren.forEach((gc) => {
+            childNode.children.push(buildInlineNodeTree(state, gc));
+          });
+        } else {
+          childNode.children.push(textNode(child));
+        }
+      }
     }
     root.children.push(childNode);
 
@@ -91,32 +92,82 @@ function buildInlineNodeTree(node: SyntaxNode, skip: number): InlineNode {
 
   // If there's remaining text after the last child, add it as plain text
   if (from < to) {
-    console.log(from, to);
-    root.children?.push(textNodeFT(from, to, skip));
+    root.children?.push(textNodeFT(from, to));
   }
 
   return root;
 }
 
-const iNodeToVNode = (state: RenderState, iNode: InlineNode): VNode | string => {
-  let vn: VNode | undefined;
+const buildLinkInlineNode = (state: RenderState, iNode: InlineNode) => {
+  const node = iNode.node;
+  if (!node || !isSyntaxNode(node) || node.name !== "Link")
+    throw new Error("SyntaxNode with name Link expected");
 
-  switch (iNode.node?.name) {
+  const children = getChildren(node);
+  const instructions = getInstChildren(node, children);
+
+  const urlNode = children.find((n) => n.name === "URL");
+  if (!urlNode || children.length < 3) {
+    // Fallback to text if link is malformed
+    iNode.children.push(textNode(node));
+    return;
+  }
+
+  const href = sanitizeUrl(state.text.substring(urlNode.from, urlNode.to));
+  iNode.attrs = { ...(iNode.attrs ?? {}), href };
+
+  const titleNode = children.find((n) => n.name === "LinkTitle");
+  if (titleNode) {
+    const title = state.text.substring(titleNode.from, titleNode.to);
+    iNode.attrs.title = title.replace(/"/g, "");
+  }
+
+  const urlIndex = children.indexOf(urlNode);
+
+  if (urlIndex === 1) {
+    // Case [URL]: render as plain text
+    iNode.children.push(textNode(children[1]));
+  } else {
+    // Case [label](URL): render as formatted inline text
+    const labelInst = [0, 1].map(
+      (i) => children.find((n) => n === instructions[i])!,
+    );
+    const [fromIndex, toIndex] = labelInst.map((i) => children.indexOf(i));
+    const contentChildren = children.slice(fromIndex + 1, toIndex);
+    const from = labelInst[0].to;
+    const to = labelInst[1].from;
+
+    if (contentChildren.length === 0) iNode.children.push(textNodeFT(from, to));
+    else {
+      // Add children InlineNodes
+      const synNode = { from, to };
+      const subTree = buildInlineNodeTree(state, synNode, contentChildren);
+      iNode.children.push(...subTree.children);
+    }
+  }
+};
+
+const iNodeToVNode = (state: RenderState, iNode: InlineNode): VNode | string => {
+  let vNode: VNode | undefined;
+  const node = iNode.node;
+  const nodeName = node && isSyntaxNode(node) ? node.name : undefined;
+
+  switch (nodeName) {
     case "StrongEmphasis":
     case "Emphasis":
     case "Strikethrough":
     case "Subscript":
     case "Superscript":
     case "InlineCode": {
-      vn = nestableMark(state, iNode);
+      vNode = nestableMark(state, iNode);
       break;
     }
     case "HardBreak":
       return h(state.schema.marks.hard_break.tag, {});
     case "Escape":
       return state.text.substring(iNode.from + 1, iNode.to);
-    // case "Link":
-    //   return renderLinkMark(state, iNode);
+    case "Link":
+      return linkVNode(state, iNode);
     case "HTMLTag": {
       // Safely handle HTML tags by treating them as text
       return h("span", {}, state.text.substring(iNode.from, iNode.to));
@@ -129,12 +180,12 @@ const iNodeToVNode = (state: RenderState, iNode: InlineNode): VNode | string => 
     }
   }
 
-  return vn;
+  return vNode;
 };
 
 const nestableMark = (state: RenderState, iNode: InlineNode): VNode => {
   const node = iNode.node;
-  if (!node) throw new Error("Wrong node type used");
+  if (!node || !isSyntaxNode(node)) throw new Error("Full SyntaxNode expected");
 
   const markType = LezerTagMap[node.name];
   const spec = state.schema.marks[markType];
@@ -166,80 +217,49 @@ const nestableMark = (state: RenderState, iNode: InlineNode): VNode => {
   return vNode;
 };
 
-// const linkInlineNode = (state: RenderState, node: SyntaxNode): VNode => {
-//   const children = getChildren(node);
-//   const instructions = getInstChildren(node, children);
+const linkVNode = (state: RenderState, iNode: InlineNode): VNode => {
+  const childVNodes = iNode.children?.map((iNode) => iNodeToVNode(state, iNode));
+  const linkProps = {
+    props: { className: state.schema.marks.link.class },
+    attrs: {
+      ...state.schema.marks.link.attributes,
+      ...iNode.attrs,
+    },
+  };
 
-//   const urlNode = children.find((n) => n.name === "URL");
-//   if (!urlNode || children.length < 3) {
-//     // Fallback to text if link is malformed
-//     return h('a', {}, state.text.substring(node.from, node.to));
-//   }
+  return h("a", linkProps, childVNodes);
+};
 
-//   const urlIndex = children.indexOf(urlNode);
-//   const url = state.text.substring(urlNode.from, urlNode.to);
+// --- Type guards and utilities
 
-//   let content: VNode | string | undefined;
-//   if (urlIndex === 1) {
-//     // Case [URL]: render as plain text
-//     content = state.text.substring(children[1].from, children[1].to);
-//   } else {
-//     // Case [label](URL): render as markdown inline text
-//     // const contentNode: SyntaxNode = {
-//     //       ...node,
-//     //   name: "Paragraph",
-//     //       from: instructions[0].to,
-//     //       to:       instructions[1].from,
-//     //     };
-//     const labelInst = [0, 1].map(i => children.find(n => n === instructions[i]));
-//     const [fromIndex, toIndex] = labelInst.map(i => children.indexOf(i!))
-//     const contentChildren = children.slice(fromIndex + 1, toIndex);
-//     grandChildren.forEach(gc => { childNode.children?.push(buildInlineNodeTree(gc)) });
-//     const contentTree = contentChildren.
-//     content = renderInline(state, node);
-//   }
+const isSyntaxNode = (node: BoundedNode | SyntaxNode): node is SyntaxNode =>
+  (node as SyntaxNode).parent != null;
 
-//   const linkProps = {
-//     attrs: {
-//       href: sanitizeUrl(url),
-//       ...state.schema.marks.link.attributes
-//     }
-//   };
-
-//   const titleNode = children.find((n) => n.name === "LinkTitle");
-//   if (titleNode) {
-//     const title = state.text.substring(titleNode.from, titleNode.to);
-//     linkProps.attrs.title = title.replace(/"/g, "");
-//   }
-
-//   return h('a', linkProps, content);
-// };
-
-/**
- * Sanitize URLs to prevent XSS
- */
-// const sanitizeUrl = (url: string): string => {
-//   try {
-//     const parsed = new URL(url, window.location.href);
-//     const allowedProtocols = ["http:", "https:", "mailto:", "tel:"];
-//     return allowedProtocols.includes(parsed.protocol) ? url : "#";
-//   } catch {
-//     return "#";
-//   }
-// };
-
-const inlineNode = (node: SyntaxNode, skip: number): InlineNode => ({
+const inlineNode = (node: BoundedNode): InlineNode => ({
   node,
-  from: node.from + skip,
+  from: node.from,
   to: node.to,
   children: [],
 });
 
-const textNodeFT = (from: number, to: number, skip: number) => ({
-  from: from + skip,
+const textNodeFT = (from: number, to: number) => ({
+  from: from,
   to: to,
   children: [],
 });
 
-const textNode = (node: SyntaxNode, skip: number): InlineNode =>
-  textNodeFT(node.from, node.to, skip);
+const textNode = (node: BoundedNode): InlineNode =>
+  textNodeFT(node.from, node.to);
+
+/**
+ * Sanitize URLs to prevent XSS
+ */
+const sanitizeUrl = (url: string): string => {
+  try {
+    const parsed = new URL(url, window.location.href);
+    const allowedProtocols = ["http:", "https:", "mailto:", "tel:"];
+    return allowedProtocols.includes(parsed.protocol) ? url : "#";
+  } catch {
+    return "#";
+  }
+};
