@@ -64,6 +64,27 @@ export interface Checkpoint {
   position: number;
 }
 
+/**
+ * Represents a segment of inline content with potential nested structure
+ * This bridges the gap between Lezer's AST and our virtual DOM representation
+ */
+export interface InlineNode {
+  // Reference to the SyntaxNode in the original lezer Tree
+  node?: SyntaxNode;
+
+  // The start of this node's range in the parent document / tree
+  from: number;
+
+  // The end of this node's range in the parent document / tree
+  to: number;
+
+  // Children of this node flattened, with Text nodes mapping the empty spaces in SyntaxNode
+  children: InlineNode[];
+
+  // Skip characters at the beginning when creating a Text node
+  skip?: number;
+}
+
 export interface RenderState {
   schema: SchemaSpec;
   dom: DOMState;
