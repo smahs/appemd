@@ -1,5 +1,6 @@
 import type { SyntaxNode } from "@lezer/common";
 import type { MarkdownParser } from "@lezer/markdown";
+import type { VNode } from "snabbdom";
 
 // Types for solid-js compatibility
 export type Accessor<T> = () => T;
@@ -42,26 +43,18 @@ export interface BlockElements {
 export type TargetElement = Element | undefined | null;
 export type Target = TargetElement | Accessor<TargetElement>;
 
-export interface DOMState {
-  scrollOffset: number;
-  target: TargetElement;
-  addOrReplaceInDOM: (
-    newEl: Node,
-    oldEl?: Node | null,
-    parent?: TargetElement,
-  ) => void;
-}
-
-export interface BlockCheckpoint {
+export interface BlockState {
   index: number;
   name: string;
   from: number;
   to: number;
 }
 
-export interface Checkpoint {
-  block?: BlockCheckpoint;
-  position: number;
+export interface RenderState {
+  target?: TargetElement;
+  block?: BlockState;
+  getVNode: (node: SyntaxNode) => VNode | undefined;
+  setVNode: (node: SyntaxNode, vNode: VNode) => void;
 }
 
 export interface BoundedNode {
@@ -91,16 +84,20 @@ export interface InlineNode extends BoundedNode {
   attrs?: Record<string, any>;
 }
 
-export interface RenderState {
+export interface RenderContext {
   schema: SchemaSpec;
-  dom: DOMState;
   text: string;
-  checkpoint: Checkpoint;
-  getBlockElement: (block?: number) => Element | undefined;
+  state: RenderState;
+  getBlockElement: (block?: number) => TargetElement;
+  addOrReplaceInDOM: (
+    newEl: Node,
+    oldEl?: Node | null,
+    parent?: TargetElement,
+  ) => void;
 }
 
 export type BlockRenderer = (
-  state: RenderState,
+  context: RenderContext,
   node: SyntaxNode,
   parent?: Element,
   child?: Element,
@@ -114,7 +111,6 @@ export interface NodeSpec {
 }
 
 export interface BlockSpec extends NodeSpec {
-  scrollOffset?: number;
   render?: BlockRenderer;
   children?: BlockSpec[];
 }
@@ -124,13 +120,7 @@ export interface SchemaSpec {
   marks: Record<string, NodeSpec>;
 }
 
-export interface ScrollConfig {
-  enabled: boolean;
-  offset: number;
-}
-
 export interface RendererOptions {
   parser?: MarkdownParser;
   schema?: SchemaSpec;
-  scroll?: Pick<ScrollConfig, "enabled"> & Pick<Partial<ScrollConfig>, "offset">;
 }

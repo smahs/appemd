@@ -54,6 +54,7 @@
   "dependencies": {
     "@lezer/common": "^1.2.3",
     "@lezer/highlight": "^1.2.1",
-    "@lezer/markdown": "^1.4.3"
+    "@lezer/markdown": "^1.4.3",
+    "snabbdom": "^3.6.3"
   }
 }

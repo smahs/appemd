@@ -1,40 +1,40 @@
 import type { SyntaxNode } from "@lezer/common";
 import { attributesModule, h, init, propsModule, type VNode } from "snabbdom";
-import { LezerMarksMap, LezerTagMap } from "./consts";
-import type { BoundedNode, InlineNode, RenderState } from "./types.ts";
-import { getChildren, getInstChildren, getNonInstChildren } from "./utils.ts";
+
+import { LezerMarksMap } from "./nodemap.ts";
+import type { BoundedNode, InlineNode, RenderContext } from "./types.ts";
+import {
+  getChildren,
+  getInstChildren,
+  getNodeSpec,
+  getNonInstChildren,
+} from "./utils.ts";
 
 // Initialize snabbdom with the modules we need
 const patch = init([propsModule, attributesModule]);
-
-// Cache for the previous VNode to enable efficient diffing
-const elementVNodeCache = new WeakMap<HTMLElement, VNode>();
 
 /*
  * Build the new virtual tree and patch with the DOM element
  */
 export const renderInline = (
-  state: RenderState,
+  context: RenderContext,
   node: SyntaxNode,
   element: HTMLElement,
-  skip = 0,
 ) => {
-  const tree = buildInlineNodeTree(state, node);
-  if (skip > 0) tree.children[0].from += skip;
+  const tree = buildInlineTree(context, node);
+  const segments = tree.children?.map((iNode) => iNodeToVNode(context, iNode));
 
-  const childVNodes = tree.children?.map((iNode) => iNodeToVNode(state, iNode));
-
-  const newVNode = h(element.tagName, {}, childVNodes);
-  const prevVNode = elementVNodeCache.get(element);
+  const newVNode = h(element.tagName, {}, segments);
+  const prevVNode = context.state.getVNode(node);
   if (prevVNode) patch(prevVNode, newVNode);
   else patch(element, newVNode);
 
-  elementVNodeCache.set(element, newVNode);
+  context.state.setVNode(node, newVNode);
 };
 
 // Build inline segments from a SyntaxNode
-function buildInlineNodeTree(
-  state: RenderState,
+function buildInlineTree(
+  context: RenderContext,
   node: BoundedNode,
   children?: SyntaxNode[],
 ): InlineNode {
@@ -48,7 +48,7 @@ function buildInlineNodeTree(
   const root: InlineNode = inlineNode(node);
   if (children.length === 0) {
     root.children.push(textNode(node));
-    return root;
+    return skipMarks(root);
   }
 
   let { from, to } = node;
@@ -58,24 +58,19 @@ function buildInlineNodeTree(
     if (from < child.from) root.children.push(textNodeFT(from, child.from));
 
     // Add the marked text
-    const childNode: InlineNode = inlineNode(child);
     switch (child.type.name) {
       case "Link":
-        buildLinkInlineNode(state, childNode);
+        root.children.push(buildLinkInlineTree(context, child));
         break;
       default: {
-        const markType = LezerMarksMap[child.type.name];
-        if (markType) {
-          const grandChildren = getNonInstChildren(child);
-          grandChildren.forEach((gc) => {
-            childNode.children.push(buildInlineNodeTree(state, gc));
-          });
+        const knownMarkType = LezerMarksMap[child.type.name];
+        if (knownMarkType) {
+          root.children.push(buildInlineTree(context, child));
         } else {
-          childNode.children.push(textNode(child));
+          root.children.push(textNode(child));
         }
       }
     }
-    root.children.push(childNode);
 
     // Move the cursor to the end of child node
     from = child.to;
@@ -86,14 +81,18 @@ function buildInlineNodeTree(
     root.children?.push(textNodeFT(from, to));
   }
 
-  return root;
+  return skipMarks(root);
 }
 
-const buildLinkInlineNode = (state: RenderState, iNode: InlineNode) => {
-  const node = iNode.node;
+const buildLinkInlineTree = (
+  context: RenderContext,
+  node: SyntaxNode,
+): InlineNode => {
+  // const node = iNode.node;
   if (!node || !isSyntaxNode(node) || node.name !== "Link")
     throw new Error("SyntaxNode with name Link expected");
 
+  const iNode = inlineNode(node);
   const children = getChildren(node);
   const instructions = getInstChildren(node, children);
 
@@ -101,15 +100,15 @@ const buildLinkInlineNode = (state: RenderState, iNode: InlineNode) => {
   if (!urlNode || children.length < 3) {
     // Fallback to text if link is malformed
     iNode.children.push(textNode(node));
-    return;
+    return iNode;
   }
 
-  const href = sanitizeUrl(state.text.substring(urlNode.from, urlNode.to));
+  const href = sanitizeUrl(context.text.substring(urlNode.from, urlNode.to));
   iNode.attrs = { ...(iNode.attrs ?? {}), href };
 
   const titleNode = children.find((n) => n.name === "LinkTitle");
   if (titleNode) {
-    const title = state.text.substring(titleNode.from, titleNode.to);
+    const title = context.text.substring(titleNode.from, titleNode.to);
     iNode.attrs.title = title.replace(/"/g, "");
   }
 
@@ -132,14 +131,33 @@ const buildLinkInlineNode = (state: RenderState, iNode: InlineNode) => {
     else {
       // Add children InlineNodes
       const synNode = { from, to };
-      const subTree = buildInlineNodeTree(state, synNode, contentChildren);
+      const subTree = buildInlineTree(context, synNode, contentChildren);
       iNode.children.push(...subTree.children);
     }
   }
+
+  return iNode;
 };
 
-const iNodeToVNode = (state: RenderState, iNode: InlineNode): VNode | string => {
-  let vNode: VNode | undefined;
+const skipMarks = (iNode: InlineNode): InlineNode => {
+  const node = iNode.node;
+  if (!node || !isSyntaxNode(node)) return iNode;
+
+  const marks = markLengths(node);
+  if (marks) {
+    iNode.children[0].from += marks.start;
+    if (marks.end) {
+      iNode.children[iNode.children.length - 1].to -= marks.end;
+    }
+  }
+
+  return iNode;
+};
+
+const iNodeToVNode = (
+  context: RenderContext,
+  iNode: InlineNode,
+): VNode | undefined => {
   const node = iNode.node;
   const nodeName = node && isSyntaxNode(node) ? node.name : undefined;
 
@@ -149,71 +167,68 @@ const iNodeToVNode = (state: RenderState, iNode: InlineNode): VNode | string => 
     case "Strikethrough":
     case "Subscript":
     case "Superscript":
+      return markVNode(context, iNode);
     case "InlineCode": {
-      vNode = nestableMark(state, iNode);
-      break;
+      const vNode = markVNode(context, iNode, false) as VNode;
+      vNode.text = "";
+      iNode.children.forEach(
+        (content) =>
+          (vNode.text += context.text.substring(content.from, content.to)),
+      );
+      return vNode;
     }
     case "HardBreak":
-      return h(state.schema.marks.hard_break.tag, {});
+      return h(context.schema.marks.hard_break.tag, {});
     case "Escape":
-      return state.text.substring(iNode.from + 1, iNode.to);
+      return textVNode(context, iNode.from + 1, iNode.to);
     case "Link":
-      return linkVNode(state, iNode);
+      return linkVNode(context, iNode);
     case "HTMLTag": {
       // Safely handle HTML tags by treating them as text
-      return h("span", {}, state.text.substring(iNode.from, iNode.to));
+      return h("span", {}, context.text.substring(iNode.from, iNode.to));
     }
     case "URL":
       // URLs are handled in the Link nodes
-      return "";
+      return;
     default: {
-      return state.text.substring(iNode.from, iNode.to);
+      return textVNode(context, iNode.from, iNode.to);
     }
   }
-
-  return vNode;
 };
 
-const nestableMark = (state: RenderState, iNode: InlineNode): VNode => {
+const markVNode = (
+  context: RenderContext,
+  iNode: InlineNode,
+  nest = true,
+): VNode => {
   const node = iNode.node;
-  if (!node || !isSyntaxNode(node)) throw new Error("Full SyntaxNode expected");
+  if (!node || !isSyntaxNode(node))
+    return textVNode(context, iNode.from, iNode.to);
 
-  const markType = LezerTagMap[node.name];
-  const spec = state.schema.marks[markType];
+  const spec = getNodeSpec(context.schema, node);
+  const vNode = h(spec.tag, {
+    attrs: spec.attributes || {},
+    props: { className: spec.class },
+  });
 
-  let start = node.from;
-  let end = node.to;
+  if (!nest) return vNode;
 
-  // Shift the cursor to remove any mark delimiters
-  const marks = getInstChildren(node);
-  if (marks.length > 0) start = marks[0].to;
-  if (marks.length > 1) end = marks[marks.length - 1].from;
-
-  const content = state.text.substring(start, end);
-
-  const vNode = h(
-    spec.tag,
-    { attrs: spec.attributes || {}, className: spec.class },
-    content,
-  );
-
-  if (iNode.children && iNode.children.length > 0) {
-    vNode.children = [];
-    iNode.children.forEach((childSegment) => {
-      const childNode = iNodeToVNode(state, childSegment);
-      vNode.children?.push(childNode);
-    });
-  }
+  if (iNode.children.length > 0)
+    vNode.children = iNode.children
+      .map((child) => iNodeToVNode(context, child))
+      .filter((n) => n != null);
 
   return vNode;
 };
 
-const linkVNode = (state: RenderState, iNode: InlineNode): VNode => {
-  const childVNodes = iNode.children?.map((iNode) => iNodeToVNode(state, iNode));
+const linkVNode = (context: RenderContext, iNode: InlineNode): VNode => {
+  const childVNodes = iNode.children?.map((iNode) =>
+    iNodeToVNode(context, iNode),
+  );
   const linkProps = {
-    props: { className: state.schema.marks.link.class },
+    props: { className: context.schema.marks.link.class },
     attrs: {
-      ...state.schema.marks.link.attributes,
+      ...context.schema.marks.link.attributes,
       ...iNode.attrs,
     },
   };
@@ -241,6 +256,24 @@ const textNodeFT = (from: number, to: number) => ({
 
 const textNode = (node: BoundedNode): InlineNode =>
   textNodeFT(node.from, node.to);
+
+const textVNode = (context: RenderContext, from: number, to: number) =>
+  h("", {}, context.text.substring(from, to));
+
+const markLengths = (
+  node: SyntaxNode,
+): { start: number; end?: number } | undefined => {
+  const marks = getInstChildren(node);
+  if (marks.length === 0) return;
+
+  const start = marks[0].to - marks[0].from;
+  if (marks.length === 1) return { start };
+
+  const endInst = marks[marks.length - 1];
+  const end = endInst.to - endInst.from;
+
+  return { start, end };
+};
 
 /**
  * Sanitize URLs to prevent XSS
