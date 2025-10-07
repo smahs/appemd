@@ -1,13 +1,29 @@
 import type { SyntaxNode } from "@lezer/common";
 import { getStyleTags, type Tag, tags } from "@lezer/highlight";
-import { LezerTagMap } from "./consts.ts";
+
+import { LezerTagMap } from "./nodemap.ts";
 import type {
   BlockElements,
   BlockSpec,
   NodeSpec,
-  RenderState,
+  RenderContext,
   SchemaSpec,
-} from "./types";
+} from "./types.ts";
+
+export const nodeKey = (node: SyntaxNode) => `${node.name}-${node.from}`;
+
+export const getNodeSpec = (schema: SchemaSpec, node: SyntaxNode) => {
+  let name = node.name,
+    headingLevel: string | undefined;
+
+  if (name.startsWith("ATXHeading") || name.startsWith("SetextHeading"))
+    headingLevel = name.slice(-1);
+
+  const type = LezerTagMap[name];
+  const spec = schema.marks[type] ?? schema.blocks[type];
+  if (headingLevel) spec.tag = `h${headingLevel}`;
+  return spec;
+};
 
 export const createElement = (
   spec: NodeSpec | BlockSpec,
@@ -107,15 +123,15 @@ export const createBlock = <K extends keyof BlockElements>(
 };
 
 export const renderBlock = (
-  state: RenderState,
+  context: RenderContext,
   block: SyntaxNode,
   parent?: Element,
   child?: Element,
 ) => {
   if (block.name === "CommentBlock") return;
 
-  const defaultRenderFn = state.schema.blocks.paragraph.render!;
+  const defaultRenderFn = context.schema.blocks.paragraph.render!;
   const nodeName = LezerTagMap[block.name];
-  const renderFn = state.schema.blocks[nodeName]?.render || defaultRenderFn;
-  renderFn(state, block, parent, child);
+  const renderFn = context.schema.blocks[nodeName]?.render || defaultRenderFn;
+  renderFn(context, block, parent, child);
 };
