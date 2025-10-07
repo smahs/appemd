@@ -9,60 +9,34 @@ import {
   Subscript,
   Superscript,
 } from "@lezer/markdown";
+import type { VNode } from "snabbdom";
 
 import { schemaSpec } from "./spec.ts";
 import type {
   Accessor,
-  BlockCheckpoint,
-  Checkpoint,
-  DOMState,
+  BlockState,
+  RenderContext,
   RendererOptions,
   RenderState,
   SchemaSpec,
-  ScrollConfig,
   Setter,
   Target,
   TargetElement,
 } from "./types.ts";
-import { getChildren, renderBlock } from "./utils.ts";
+import { getChildren, getNodeSpec, nodeKey, renderBlock } from "./utils.ts";
 
 const defaultParser = (): MarkdownParser => {
   return cmParser.configure([GFM, Subscript, Superscript, Emoji, Autolink]);
 };
 
-const defaultScrollConfig: ScrollConfig = { enabled: false, offset: 48 };
-
-const scrollParent = (el?: HTMLElement | null): HTMLElement | undefined => {
-  if (!el) return undefined;
-
-  while (el && el !== document.documentElement) {
-    const style = getComputedStyle(el);
-    if (style.overflowY === "auto" || style.overflowY === "scroll") {
-      return el;
-    }
-    el = el.parentElement;
-  }
-};
-
-/**
- * Provides DOM interactions, including holding reference to the target element,
- * adding or replacing block-level elements and scrolling behavior (if configured).
- */
-class DOMTargetState implements DOMState {
-  /**
-   * The index of the current block being rendered.
-   */
-  // block: number = 0;
-
-  /**
-   * Any additional offset to be used for determining whether to
-   * scroll after an append operation.
-   */
-  scrollOffset = 0;
-
+export class RendererState implements RenderState {
   private _target: Target;
-  private scrollParent: TargetElement;
-  private scrollConfig: ScrollConfig;
+  block?: BlockState;
+  vNodeCache: Map<string, VNode | undefined>;
+
+  constructor() {
+    this.vNodeCache = new Map();
+  }
 
   /**
    * Gets the target element, resolving an Accessor function if necessary.
@@ -75,65 +49,37 @@ class DOMTargetState implements DOMState {
   }
 
   /**
-   * Sets the target element or Accessor and sets the scroll parent.
+   * Sets the target element or Accessor.
    */
   set target(target: Target | undefined | null) {
     this._target = target;
-    if (target instanceof HTMLElement) this.scrollParent = scrollParent(target);
   }
 
-  /**
-   * Initializes a new DOMTargetState with optional scroll configuration.
-   *
-   * @param scroll - Optional scroll configuration object
-   */
-  constructor(scroll?: RendererOptions["scroll"]) {
-    this.scrollConfig = Object.assign(defaultScrollConfig, scroll);
-  }
-
-  /**
-   * Adds or replaces an element in the DOM.
-   *
-   * @param newEl - The new element to add or replace with
-   * @param oldEl - The existing element to replace, if any
-   * @param parent - The parent element to append to
-   */
-  addOrReplaceInDOM(
-    newEl: Node,
-    oldEl?: Node | null,
-    parent: TargetElement = this.target,
-  ) {
-    let target: TargetElement;
-    if (oldEl?.parentElement) target = oldEl.parentElement;
-    else target = parent;
-    if (!target) throw new Error("A suitable parent element could not be found");
-
-    oldEl ? target.replaceChild(newEl, oldEl) : target.appendChild(newEl);
-  }
-
-  scroll() {
-    if (!this.scrollConfig.enabled) return;
-
-    const el = this.scrollParent;
-    if (!el) return;
-
-    const top = el.scrollHeight;
-    const fromBottom = top - (el.scrollTop + el.clientHeight);
-    if (fromBottom <= this.scrollOffset + this.scrollConfig.offset)
-      el?.scrollTo({ top, behavior: "instant" });
-  }
-}
-
-export class RendererCheckpoint implements Checkpoint {
-  block?: BlockCheckpoint;
-  position: number;
-
-  constructor() {
-    this.position = 0;
-  }
-
-  setBlock(block: BlockCheckpoint) {
+  setBlockState(block: BlockState) {
     this.block = block;
+  }
+
+  clearVNodeCache() {
+    this.vNodeCache.clear();
+  }
+
+  getParentBlockElement(el: HTMLElement | null) {
+    if (!el || !this.target) return;
+
+    let blockEl: HTMLElement | null = el;
+    while (blockEl && blockEl.parentElement !== this.target) {
+      blockEl = blockEl.parentElement;
+    }
+
+    return blockEl;
+  }
+
+  getVNode(node: SyntaxNode): VNode | undefined {
+    return this.vNodeCache.get(nodeKey(node));
+  }
+
+  setVNode(node: SyntaxNode, vNode: VNode) {
+    this.vNodeCache.set(nodeKey(node), vNode);
   }
 }
 
@@ -143,8 +89,7 @@ export class RendererCheckpoint implements Checkpoint {
 export class MarkdownRenderer {
   private parser: MarkdownParser;
   private schema: SchemaSpec;
-  private domState: DOMTargetState;
-  private checkpoint: RendererCheckpoint;
+  private state: RendererState;
 
   private tree: Tree;
   private fragments: readonly TreeFragment[];
@@ -155,19 +100,14 @@ export class MarkdownRenderer {
     return this._text instanceof Function ? this._text() : this._text;
   }
 
-  get state(): RenderState {
+  get context(): RenderContext {
     return {
       schema: this.schema,
-      dom: this.domState,
       text: this.text,
-      checkpoint: this.checkpoint,
+      state: this.state,
       getBlockElement: this.getBlockElement,
+      addOrReplaceInDOM: this.addOrReplaceInDOM,
     };
-  }
-
-  set target(target: Target) {
-    this.domState.target = target;
-    this.renderDOM();
   }
 
   constructor(
@@ -184,9 +124,10 @@ export class MarkdownRenderer {
     this.tree = tree;
     this.fragments = fragments;
     this.schema = options?.schema ?? schemaSpec;
-    this.domState = new DOMTargetState(options?.scroll);
-    this.checkpoint = new RendererCheckpoint();
+    this.state = new RendererState();
+
     this.getBlockElement = this.getBlockElement.bind(this);
+    this.addOrReplaceInDOM = this.addOrReplaceInDOM.bind(this);
   }
 
   static init(
@@ -226,7 +167,7 @@ export class MarkdownRenderer {
       undefined,
       options,
     );
-    renderer.domState.target = target;
+    renderer.target = target;
     renderer.renderDOM();
   }
 
@@ -253,39 +194,103 @@ export class MarkdownRenderer {
     this.tree = this.parser.parse(this.text, fragments);
     this.fragments = TreeFragment.addTree(this.tree, fragments);
 
-    if (this.domState.target) {
-      this.renderDOM();
-      this.domState.scroll();
-      this.domState.scrollOffset = 0;
-    }
+    if (this.target) this.renderDOM();
   }
 
   private renderDOM(): void {
-    if (!this.domState.target) return;
+    if (!this.target) return;
 
+    const lastBlockId = this.state.block?.index;
     const children = getChildren(this.tree.cursor().node);
     if (!children.length) return;
 
-    let blockIndex = this.checkpoint.block?.index ?? -1;
-
-    // console.log(blockIndex, children.length, { ...this.checkpoint.block });
-    while (blockIndex > children.length) {
-      const el = this.getBlockElement(blockIndex);
-      if (el) this.domState.target.removeChild(el);
-      blockIndex -= 1;
+    let index = Math.max(this.target.children.length - 1, 0);
+    if (index !== children.length - 1) {
+      this.syncDOM(children);
+      index = this.target.children.length;
     }
 
-    if (blockIndex < 0) blockIndex = 0;
+    while (index < children.length) {
+      const block = children[index];
+      this.state.setBlockState(this.blockState(index, block));
+      renderBlock(this.context, block);
+      index += 1;
+    }
 
-    for (let i = blockIndex; i < children.length; i++) {
-      const block = children[i];
-      this.checkpoint.setBlock(this.checkpointBlock(i, block));
-      renderBlock(this.state, block);
+    // Truncate BulletLists which can go out of sync when a
+    // paragraph starting with bold text follows [* ... \n **...]
+    if (lastBlockId && lastBlockId < index - 1) {
+      const lastBlock = children[lastBlockId];
+      if (["BulletList"].includes(lastBlock.name)) {
+        const lbChildren = getChildren(lastBlock);
+        const lbEl = this.target.children.item(lastBlockId);
+        this.syncDOM(lbChildren, lbEl, false, true);
+      }
     }
   }
 
-  private checkpointBlock(index: number, node: SyntaxNode): BlockCheckpoint {
+  private blockState(index: number, node: SyntaxNode): BlockState {
     return { index, from: node.from, to: node.to, name: node.name };
+  }
+
+  private syncDOM(
+    nodes?: SyntaxNode[],
+    parent: TargetElement = this.target,
+    matchTags = true,
+    tail = false,
+  ) {
+    nodes = nodes ?? getChildren(this.tree.cursor().node);
+
+    // Remove elements which don't match the corresponding SyntaxNode
+    // This should also remove any lingering tail elements
+    if (parent && matchTags) {
+      const mismatches = nodes.map((node, i) => {
+        const spec = getNodeSpec(this.schema, node);
+        const el = parent?.children.item(i);
+        return el?.tagName.toLowerCase() !== spec.tag;
+      });
+      const firstMismatch = mismatches.indexOf(true);
+      const nodesToRemove = Array.from(parent?.children).splice(firstMismatch);
+      nodesToRemove.forEach((el) => {
+        parent.removeChild(el);
+      });
+    }
+
+    // Sync tail elements specifically - for nested block elements
+    if (tail) {
+      Array.from(parent?.children ?? [])
+        .slice(nodes.length)
+        .forEach((el) => {
+          parent?.removeChild(el);
+        });
+    }
+  }
+
+  /**
+   * Adds or replaces an element in the DOM.
+   *
+   * @param newEl - The new element to add or replace with
+   * @param oldEl - The existing element to replace, if any
+   * @param parent - The parent element to append to
+   */
+  addOrReplaceInDOM(
+    newChild: Node,
+    oldChild?: Node | null,
+    parent: TargetElement = this.target,
+  ) {
+    let target: TargetElement;
+    if (oldChild?.parentElement) target = oldChild.parentElement;
+    else target = parent;
+    if (!target) throw new Error("A suitable parent element could not be found");
+
+    oldChild
+      ? target.replaceChild(newChild, oldChild)
+      : target.appendChild(newChild);
+
+    // Clear VNode cache if we're changing into a new block node
+    if (newChild instanceof HTMLElement && parent === this.target) {
+      this.state.clearVNodeCache();
+    }
   }
 
   /**
@@ -294,12 +299,28 @@ export class MarkdownRenderer {
    * @param index - The index of the block element to retrieve
    * @returns The block element or undefined
    */
-  getBlockElement(index?: number): Element | undefined {
-    index = index ?? this.checkpoint.block?.index ?? 0;
-    const existingEl = this.domState.target?.children[index];
+  getBlockElement(index?: number): TargetElement {
+    index = index ?? this.state.block?.index ?? 0;
+    const existingEl = this.target?.children.item(index);
     if (existingEl && !(existingEl instanceof Element))
       throw new Error("The block element type mismatch");
 
     return existingEl;
+  }
+
+  /**
+   * Gets the target element, resolving an Accessor function if necessary.
+   */
+  get target(): TargetElement {
+    return this.state.target;
+  }
+
+  /**
+   * Sets the target element or Accessor in the RenderState instance.
+   * Also performs the initial render when the target is first set.
+   */
+  set target(target: Target | undefined | null) {
+    this.state.target = target;
+    if (this.target) this.renderDOM();
   }
 }
