@@ -2,8 +2,9 @@ export { renderInline } from "./inline.ts";
 export { MarkdownRenderer } from "./renderer.ts";
 export * from "./spec.ts";
 export type {
+  BlockCleanupFn,
   BlockElements,
-  BlockRenderer,
+  BlockRenderFn,
   BlockSpec,
   BlockState,
   BoundedNode,

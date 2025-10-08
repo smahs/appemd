@@ -96,11 +96,17 @@ export interface RenderContext {
   ) => void;
 }
 
-export type BlockRenderer = (
+export type BlockRenderFn = (
   context: RenderContext,
   node: SyntaxNode,
   parent?: Element,
   child?: Element,
+) => void;
+
+export type BlockCleanupFn = (
+  context: RenderContext,
+  node: SyntaxNode,
+  element: Element,
 ) => void;
 
 export interface NodeSpec {
@@ -111,7 +117,8 @@ export interface NodeSpec {
 }
 
 export interface BlockSpec extends NodeSpec {
-  render?: BlockRenderer;
+  render?: BlockRenderFn;
+  cleanup?: BlockCleanupFn;
   children?: BlockSpec[];
 }
 

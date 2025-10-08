@@ -5,7 +5,7 @@ export const LezerMarksMap: Record<string, string> = {
   Subscript: "subscript",
   Superscript: "superscript",
   InlineCode: "code",
-  Hardbreak: "hard_break",
+  HardBreak: "hard_break",
   Link: "link",
 };
 
