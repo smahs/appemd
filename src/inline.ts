@@ -5,9 +5,9 @@ import { LezerMarksMap } from "./nodemap.ts";
 import type { BoundedNode, InlineNode, RenderContext } from "./types.ts";
 import {
   getChildren,
+  getInlineChildren,
   getInstChildren,
   getNodeSpec,
-  getNonInstChildren,
 } from "./utils.ts";
 
 // Initialize snabbdom with the modules we need
@@ -25,9 +25,9 @@ export const renderInline = (
   const segments = tree.children?.map((iNode) => iNodeToVNode(context, iNode));
 
   const newVNode = h(element.tagName, {}, segments);
-  const prevVNode = context.state.getVNode(node);
-  if (prevVNode) patch(prevVNode, newVNode);
-  else patch(element, newVNode);
+  // const prevVNode = context.state.getVNode(node);
+  // if (prevVNode) patch(prevVNode, newVNode);
+  patch(element, newVNode);
 
   context.state.setVNode(node, newVNode);
 };
@@ -39,7 +39,7 @@ function buildInlineTree(
   children?: SyntaxNode[],
 ): InlineNode {
   if (!children) {
-    if (isSyntaxNode(node)) children = getNonInstChildren(node);
+    if (isSyntaxNode(node)) children = getInlineChildren(node);
     else throw new Error("Either SyntaxNode or children array is required");
   }
 
@@ -171,10 +171,9 @@ const iNodeToVNode = (
     case "InlineCode": {
       const vNode = markVNode(context, iNode, false) as VNode;
       vNode.text = "";
-      iNode.children.forEach(
-        (content) =>
-          (vNode.text += context.text.substring(content.from, content.to)),
-      );
+      iNode.children.forEach((content) => {
+        vNode.text += context.text.substring(content.from, content.to);
+      });
       return vNode;
     }
     case "HardBreak":
@@ -263,7 +262,7 @@ const textVNode = (context: RenderContext, from: number, to: number) =>
 const markLengths = (
   node: SyntaxNode,
 ): { start: number; end?: number } | undefined => {
-  const marks = getInstChildren(node);
+  const marks = getInstChildren(node).filter((m) => m.name !== "HardBreak");
   if (marks.length === 0) return;
 
   const start = marks[0].to - marks[0].from;

@@ -21,6 +21,7 @@ export const getNodeSpec = (schema: SchemaSpec, node: SyntaxNode) => {
 
   const type = LezerTagMap[name];
   const spec = schema.marks[type] ?? schema.blocks[type];
+
   if (headingLevel) spec.tag = `h${headingLevel}`;
   return spec;
 };
@@ -102,6 +103,21 @@ export const getInlineChildren = (node: SyntaxNode, from: number = 0) => {
   return getNonInstChildren(undefined, children)
     .concat(children.filter((c) => c.name === "HardBreak"))
     .sort((n1, n2) => n1.from - n2.from);
+};
+
+export const lastTextNode = (node: Node): Text | undefined => {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node as Text;
+  }
+
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    let current = node.lastChild;
+    while (current) {
+      const last = lastTextNode(current);
+      if (last) return last;
+      current = current.previousSibling;
+    }
+  }
 };
 
 // --- Below block utils are here to avoid circular imports

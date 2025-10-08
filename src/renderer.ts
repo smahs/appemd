@@ -14,6 +14,7 @@ import type { VNode } from "snabbdom";
 import { schemaSpec } from "./spec.ts";
 import type {
   Accessor,
+  BlockSpec,
   BlockState,
   RenderContext,
   RendererOptions,
@@ -210,6 +211,7 @@ export class MarkdownRenderer {
       index = this.target.children.length;
     }
 
+    // Iteratively render starting from the current block node
     while (index < children.length) {
       const block = children[index];
       this.state.setBlockState(this.blockState(index, block));
@@ -217,14 +219,13 @@ export class MarkdownRenderer {
       index += 1;
     }
 
-    // Truncate BulletLists which can go out of sync when a
-    // paragraph starting with bold text follows [* ... \n **...]
+    // If we have changed the block node, then cleanup the previous node
     if (lastBlockId && lastBlockId < index - 1) {
       const lastBlock = children[lastBlockId];
-      if (["BulletList"].includes(lastBlock.name)) {
-        const lbChildren = getChildren(lastBlock);
-        const lbEl = this.target.children.item(lastBlockId);
-        this.syncDOM(lbChildren, lbEl, false, true);
+      const spec = getNodeSpec(this.schema, lastBlock) as BlockSpec;
+      if (spec.cleanup) {
+        const el = this.target.children.item(lastBlockId);
+        if (el) spec.cleanup(this.context, lastBlock, el);
       }
     }
   }
@@ -233,37 +234,23 @@ export class MarkdownRenderer {
     return { index, from: node.from, to: node.to, name: node.name };
   }
 
-  private syncDOM(
-    nodes?: SyntaxNode[],
-    parent: TargetElement = this.target,
-    matchTags = true,
-    tail = false,
-  ) {
+  private syncDOM(nodes?: SyntaxNode[], parent: TargetElement = this.target) {
+    if (!parent) return;
+
     nodes = nodes ?? getChildren(this.tree.cursor().node);
 
     // Remove elements which don't match the corresponding SyntaxNode
     // This should also remove any lingering tail elements
-    if (parent && matchTags) {
-      const mismatches = nodes.map((node, i) => {
-        const spec = getNodeSpec(this.schema, node);
-        const el = parent?.children.item(i);
-        return el?.tagName.toLowerCase() !== spec.tag;
-      });
-      const firstMismatch = mismatches.indexOf(true);
-      const nodesToRemove = Array.from(parent?.children).splice(firstMismatch);
-      nodesToRemove.forEach((el) => {
-        parent.removeChild(el);
-      });
-    }
-
-    // Sync tail elements specifically - for nested block elements
-    if (tail) {
-      Array.from(parent?.children ?? [])
-        .slice(nodes.length)
-        .forEach((el) => {
-          parent?.removeChild(el);
-        });
-    }
+    const mismatches = nodes.map((node, i) => {
+      const spec = getNodeSpec(this.schema, node);
+      const el = parent?.children.item(i);
+      return el?.tagName.toLowerCase() !== spec.tag;
+    });
+    const firstMismatch = mismatches.indexOf(true);
+    const nodesToRemove = Array.from(parent?.children).splice(firstMismatch);
+    nodesToRemove.forEach((el) => {
+      parent.removeChild(el);
+    });
   }
 
   /**
