@@ -27,7 +27,8 @@ export const schemaSpec: SchemaSpec = {
     code_block: {
       tag: "pre",
       children: [{ tag: "code" }],
-      render: CodeBlockRenderer,
+      render: CodeBlockRenderer.render,
+      cleanup: CodeBlockRenderer.cleanup,
     },
     horizontal_rule: {
       tag: "hr",

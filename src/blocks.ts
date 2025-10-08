@@ -1,10 +1,11 @@
 import type { SyntaxNode } from "@lezer/common";
 import { renderInline } from "./inline";
-import type { BlockRenderer, RenderContext } from "./types";
+import type { RenderContext } from "./types";
 import {
   createBlock,
   getChildren,
   getNonInstChildren,
+  lastTextNode,
   renderBlock,
 } from "./utils";
 
@@ -13,7 +14,7 @@ export const HorizontalRuleRenderer = (context: RenderContext) => {
   context.addOrReplaceInDOM(hr, context.getBlockElement());
 };
 
-export const ParagraphRenderer: BlockRenderer = (
+export const ParagraphRenderer = (
   context: RenderContext,
   node: SyntaxNode,
   parent?: Element,
@@ -69,47 +70,67 @@ export const QuoteRenderer = (context: RenderContext, block: SyntaxNode) => {
   }
 };
 
-export const CodeBlockRenderer = (
-  context: RenderContext,
-  block: SyntaxNode,
-  parent?: Element,
-  child?: Element,
-) => {
-  const children = getChildren(block);
+export const CodeBlockRenderer = {
+  render: (
+    context: RenderContext,
+    block: SyntaxNode,
+    parent?: Element,
+    child?: Element,
+  ) => {
+    const children = getChildren(block);
 
-  const infoNode = children.find((n) => n.type.name === "CodeInfo");
-  const info = infoNode
-    ? context.text.substring(infoNode.from, infoNode.to)
-    : undefined;
+    const infoNode = children.find((n) => n.type.name === "CodeInfo");
+    const info = infoNode
+      ? context.text.substring(infoNode.from, infoNode.to)
+      : undefined;
 
-  const codeNodes = children.filter((n) => n.type.name === "CodeText");
-  if (codeNodes.length === 0) return;
+    const codeNodes = children.filter((n) => n.type.name === "CodeText");
+    if (codeNodes.length === 0) return;
 
-  let pre: HTMLPreElement;
-  const current = context.getBlockElement();
-  const el = parent ? child : current;
-  if (el instanceof HTMLPreElement) {
-    pre = el as HTMLPreElement;
-  } else {
-    pre = createBlock(context.schema, "code_block");
-    if (info) pre.classList.add(`language-${info}`);
+    let pre: HTMLPreElement;
+    const current = context.getBlockElement();
+    const el = parent ? child : current;
+    if (el instanceof HTMLPreElement) {
+      pre = el as HTMLPreElement;
+    } else {
+      pre = createBlock(context.schema, "code_block");
+      if (info) pre.classList.add(`language-${info}`);
 
-    if (parent) context.addOrReplaceInDOM(pre, child, parent);
-    else context.addOrReplaceInDOM(pre, current);
-
-    // context.scrollOffset = 48;
-  }
-
-  const codeEl = pre.querySelector("code");
-  if (codeEl) {
-    const lastDOMIndex = (codeEl?.childNodes.length || 1) - 1;
-    for (let i = lastDOMIndex; i < codeNodes.length; i++) {
-      const codeNode = codeNodes[i];
-      const code = context.text.substring(codeNode.from, codeNode.to);
-      const text = document.createTextNode(code);
-      context.addOrReplaceInDOM(text, codeEl.childNodes[i], codeEl);
+      if (parent) context.addOrReplaceInDOM(pre, child, parent);
+      else context.addOrReplaceInDOM(pre, current);
     }
-  }
+
+    const codeEl = pre.querySelector("code");
+    if (codeEl) {
+      const lastDOMIndex = (codeEl?.childNodes.length || 1) - 1;
+      for (let i = lastDOMIndex; i < codeNodes.length; i++) {
+        const codeNode = codeNodes[i];
+        const code = context.text.substring(codeNode.from, codeNode.to);
+        const text = document.createTextNode(code);
+        context.addOrReplaceInDOM(text, codeEl.childNodes[i], codeEl);
+      }
+    }
+  },
+  cleanup: (_: RenderContext, __: SyntaxNode, element: Element) => {
+    const lastNode = lastTextNode(element);
+    if (lastNode) {
+      const text = lastNode.textContent || "";
+      const trimmed = text.replace(/`{2,}$/, "").trim();
+      lastNode.textContent = trimmed;
+
+      if (trimmed !== "") return;
+
+      let last: Node | null = lastNode;
+      let parent: Node | null = last.parentNode;
+      while (parent && parent !== element) {
+        parent.removeChild(last);
+        if (parent?.textContent) break;
+
+        last = parent;
+        parent = parent?.parentNode;
+      }
+    }
+  },
 };
 
 export const ListRenderer = {
@@ -169,6 +190,16 @@ export const ListRenderer = {
       }
       ListRenderer.renderListItem(context, leaf, liEl as HTMLLIElement);
     }
+  },
+  cleanup: (_: RenderContext, node: SyntaxNode, element: Element) => {
+    // Truncate BulletLists which can go out of sync when a
+    // paragraph starting with bold text follows [* ... \n **...]
+    const childNodes = getNonInstChildren(node);
+    Array.from(element?.children ?? [])
+      .slice(childNodes.length)
+      .forEach((el) => {
+        element?.removeChild(el);
+      });
   },
 };
 
