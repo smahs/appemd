@@ -1,6 +1,5 @@
 import type { SyntaxNode } from "@lezer/common";
 import type { MarkdownParser } from "@lezer/markdown";
-import type { VNode } from "snabbdom";
 
 // Types for solid-js compatibility
 export type Accessor<T> = () => T;
@@ -8,9 +7,6 @@ export type Setter<T> = {
   (value: T): void;
   (updater: (prev: T) => T): void;
 };
-// export type Setter<T> =
-//   | ((value: T) => void)
-//   | ((updater: (prev: T) => T) => void);
 
 // Copied from prosemirror-model for prosemirror toDOM compatibility
 type DOMNode = InstanceType<typeof window.Node>;
@@ -53,8 +49,8 @@ export interface BlockState {
 export interface RenderState {
   target?: TargetElement;
   block?: BlockState;
-  getVNode: (node: SyntaxNode) => VNode | undefined;
-  setVNode: (node: SyntaxNode, vNode: VNode) => void;
+  getINode: (node: SyntaxNode) => InlineNode | undefined;
+  setINode: (node: SyntaxNode, iNode: InlineNode) => void;
 }
 
 export interface BoundedNode {
@@ -75,9 +71,6 @@ export interface InlineNode extends BoundedNode {
 
   // Children of this node flattened, with Text nodes mapping the empty spaces in SyntaxNode
   children: InlineNode[];
-
-  // Skip characters at the beginning when creating a Text node
-  skip?: number;
 
   // Set arbitrary attributes
   // biome-ignore lint: valid use case
