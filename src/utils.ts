@@ -29,6 +29,7 @@ export const getNodeSpec = (schema: SchemaSpec, node: SyntaxNode) => {
 export const createElement = (
   spec: NodeSpec | BlockSpec,
   tag?: string,
+  attrs?: Record<string, any>,
 ): HTMLElement => {
   const element = document.createElement(tag ?? spec.tag);
 
@@ -36,8 +37,9 @@ export const createElement = (
     element.className = spec.class;
   }
 
-  if (spec.attributes) {
-    Object.entries(spec.attributes).forEach(([key, value]) => {
+  if (spec.attributes || attrs) {
+    const merged = Object.assign({}, attrs, spec.attributes);
+    Object.entries(merged).forEach(([key, value]) => {
       element.setAttribute(key, value);
     });
   }

@@ -9,13 +9,13 @@ import {
   Subscript,
   Superscript,
 } from "@lezer/markdown";
-import type { VNode } from "snabbdom";
 
 import { schemaSpec } from "./spec.ts";
 import type {
   Accessor,
   BlockSpec,
   BlockState,
+  InlineNode,
   RenderContext,
   RendererOptions,
   RenderState,
@@ -33,10 +33,10 @@ const defaultParser = (): MarkdownParser => {
 export class RendererState implements RenderState {
   private _target: Target;
   block?: BlockState;
-  vNodeCache: Map<string, VNode | undefined>;
+  iNodeCache: Map<string, InlineNode | undefined>;
 
   constructor() {
-    this.vNodeCache = new Map();
+    this.iNodeCache = new Map();
   }
 
   /**
@@ -60,8 +60,8 @@ export class RendererState implements RenderState {
     this.block = block;
   }
 
-  clearVNodeCache() {
-    this.vNodeCache.clear();
+  clearInlineNodeCache() {
+    this.iNodeCache.clear();
   }
 
   getParentBlockElement(el: HTMLElement | null) {
@@ -75,12 +75,12 @@ export class RendererState implements RenderState {
     return blockEl;
   }
 
-  getVNode(node: SyntaxNode): VNode | undefined {
-    return this.vNodeCache.get(nodeKey(node));
+  getINode(node: SyntaxNode): InlineNode | undefined {
+    return this.iNodeCache.get(nodeKey(node));
   }
 
-  setVNode(node: SyntaxNode, vNode: VNode) {
-    this.vNodeCache.set(nodeKey(node), vNode);
+  setINode(node: SyntaxNode, iNode: InlineNode) {
+    this.iNodeCache.set(nodeKey(node), iNode);
   }
 }
 
@@ -276,7 +276,7 @@ export class MarkdownRenderer {
 
     // Clear VNode cache if we're changing into a new block node
     if (newChild instanceof HTMLElement && parent === this.target) {
-      this.state.clearVNodeCache();
+      this.state.clearInlineNodeCache();
     }
   }
 

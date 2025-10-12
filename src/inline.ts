@@ -1,17 +1,14 @@
 import type { SyntaxNode } from "@lezer/common";
-import { attributesModule, h, init, propsModule, type VNode } from "snabbdom";
 
 import { LezerMarksMap } from "./nodemap.ts";
 import type { BoundedNode, InlineNode, RenderContext } from "./types.ts";
 import {
+  createElement,
   getChildren,
   getInlineChildren,
   getInstChildren,
   getNodeSpec,
 } from "./utils.ts";
-
-// Initialize snabbdom with the modules we need
-const patch = init([propsModule, attributesModule]);
 
 /*
  * Build the new virtual tree and patch with the DOM element
@@ -22,22 +19,16 @@ export const renderInline = (
   element: HTMLElement,
 ) => {
   const tree = buildInlineTree(context, node);
-  const segments = tree.children?.map((iNode) => iNodeToVNode(context, iNode));
-
-  const newVNode = h(element.tagName, {}, segments);
-  // const prevVNode = context.state.getVNode(node);
-  // if (prevVNode) patch(prevVNode, newVNode);
-  patch(element, newVNode);
-
-  context.state.setVNode(node, newVNode);
+  patchDOM(context, tree.children, element);
+  // context.state.setINode(node, tree);
 };
 
 // Build inline segments from a SyntaxNode
-function buildInlineTree(
+const buildInlineTree = (
   context: RenderContext,
   node: BoundedNode,
   children?: SyntaxNode[],
-): InlineNode {
+): InlineNode => {
   if (!children) {
     if (isSyntaxNode(node)) children = getInlineChildren(node);
     else throw new Error("Either SyntaxNode or children array is required");
@@ -62,9 +53,12 @@ function buildInlineTree(
       case "Link":
         root.children.push(buildLinkInlineTree(context, child));
         break;
+      case "Escape":
+        root.children.push(textNodeFT(child.from + 1, child.to));
+        break;
       default: {
-        const knownMarkType = LezerMarksMap[child.type.name];
-        if (knownMarkType) {
+        const knownMark = LezerMarksMap[child.type.name];
+        if (knownMark) {
           root.children.push(buildInlineTree(context, child));
         } else {
           root.children.push(textNode(child));
@@ -82,13 +76,12 @@ function buildInlineTree(
   }
 
   return skipMarks(root);
-}
+};
 
 const buildLinkInlineTree = (
   context: RenderContext,
   node: SyntaxNode,
 ): InlineNode => {
-  // const node = iNode.node;
   if (!node || !isSyntaxNode(node) || node.name !== "Link")
     throw new Error("SyntaxNode with name Link expected");
 
@@ -103,12 +96,12 @@ const buildLinkInlineTree = (
     return iNode;
   }
 
-  const href = sanitizeUrl(context.text.substring(urlNode.from, urlNode.to));
+  const href = sanitizeUrl(extractText(context, urlNode));
   iNode.attrs = { ...(iNode.attrs ?? {}), href };
 
   const titleNode = children.find((n) => n.name === "LinkTitle");
   if (titleNode) {
-    const title = context.text.substring(titleNode.from, titleNode.to);
+    const title = extractText(context, titleNode);
     iNode.attrs.title = title.replace(/"/g, "");
   }
 
@@ -123,15 +116,15 @@ const buildLinkInlineTree = (
       (i) => children.find((n) => n === instructions[i])!,
     );
     const [fromIndex, toIndex] = labelInst.map((i) => children.indexOf(i));
-    const contentChildren = children.slice(fromIndex + 1, toIndex);
+    const content = children.slice(fromIndex + 1, toIndex);
     const from = labelInst[0].to;
     const to = labelInst[1].from;
 
-    if (contentChildren.length === 0) iNode.children.push(textNodeFT(from, to));
+    if (content.length === 0) iNode.children.push(textNodeFT(from, to));
     else {
       // Add children InlineNodes
-      const synNode = { from, to };
-      const subTree = buildInlineTree(context, synNode, contentChildren);
+      const syntheticNode = { from, to };
+      const subTree = buildInlineTree(context, syntheticNode, content);
       iNode.children.push(...subTree.children);
     }
   }
@@ -154,85 +147,128 @@ const skipMarks = (iNode: InlineNode): InlineNode => {
   return iNode;
 };
 
-const iNodeToVNode = (
+const patchDOM = (
   context: RenderContext,
-  iNode: InlineNode,
-): VNode | undefined => {
-  const node = iNode.node;
-  const nodeName = node && isSyntaxNode(node) ? node.name : undefined;
+  targetChildren: InlineNode[],
+  parentElement: HTMLElement,
+) => {
+  const domChildren = Array.from(parentElement.childNodes);
+  let domIndex = 0;
+  let targetIndex = 0;
 
-  switch (nodeName) {
-    case "StrongEmphasis":
-    case "Emphasis":
-    case "Strikethrough":
-    case "Subscript":
-    case "Superscript":
-      return markVNode(context, iNode);
-    case "InlineCode": {
-      const vNode = markVNode(context, iNode, false) as VNode;
-      vNode.text = "";
-      iNode.children.forEach((content) => {
-        vNode.text += context.text.substring(content.from, content.to);
-      });
-      return vNode;
+  while (targetIndex < targetChildren.length || domIndex < domChildren.length) {
+    const targetNode = targetChildren[targetIndex];
+    const domNode = domChildren[domIndex];
+
+    // No more target nodes - remove remaining DOM nodes
+    if (!targetNode) {
+      domNode.remove();
+      domIndex++;
+      continue;
     }
-    case "HardBreak":
-      return h(context.schema.marks.hard_break.tag, {});
-    case "Escape":
-      return textVNode(context, iNode.from + 1, iNode.to);
-    case "Link":
-      return linkVNode(context, iNode);
-    case "HTMLTag": {
-      // Safely handle HTML tags by treating them as text
-      return h("span", {}, context.text.substring(iNode.from, iNode.to));
+
+    // No more DOM nodes - append remaining target nodes
+    if (!domNode) {
+      const newNode = createDOMNode(context, targetNode);
+      parentElement.appendChild(newNode);
+      targetIndex++;
+      continue;
     }
-    case "URL":
-      // URLs are handled in the Link nodes
-      return;
-    default: {
-      return textVNode(context, iNode.from, iNode.to);
+
+    // Both exist - check if they match
+    if (nodesMatch(context, targetNode, domNode)) {
+      // Nodes match - update content if needed
+      updateNode(context, targetNode, domNode);
+      domIndex++;
+      targetIndex++;
+    } else {
+      // Nodes don't match - check if we should replace or insert
+      const targetMatchesNextDOM =
+        domChildren[domIndex + 1] &&
+        nodesMatch(context, targetNode, domChildren[domIndex + 1]);
+
+      if (targetMatchesNextDOM) {
+        // Current DOM node was removed - delete it
+        domNode.remove();
+        domIndex++;
+      } else {
+        // Replace the DOM node with the target
+        const newNode = createDOMNode(context, targetNode);
+        parentElement.replaceChild(newNode, domNode);
+        domIndex++;
+        targetIndex++;
+      }
     }
   }
 };
 
-const markVNode = (
+/**
+ * Updates an existing DOM node to match the target InlineNode.
+ */
+const updateNode = (
   context: RenderContext,
   iNode: InlineNode,
-  nest = true,
-): VNode => {
+  domNode: ChildNode,
+) => {
   const node = iNode.node;
-  if (!node || !isSyntaxNode(node))
-    return textVNode(context, iNode.from, iNode.to);
+  if (!node || !isSyntaxNode(node)) {
+    const textNode = domNode as Text;
+    const newText = extractText(context, iNode);
 
-  const spec = getNodeSpec(context.schema, node);
-  const vNode = h(spec.tag, {
-    attrs: spec.attributes || {},
-    props: { className: spec.class },
-  });
+    if (textNode.nodeValue !== newText) {
+      textNode.nodeValue = newText;
+    }
+    return;
+  }
 
-  if (!nest) return vNode;
+  if (node.name === "InlineCode") {
+    // InlineCode: treat as plain text within code element, no formatting
+    const codeElement = domNode as HTMLElement;
+    const newText = extractText(context, iNode.children[0]);
 
-  if (iNode.children.length > 0)
-    vNode.children = iNode.children
-      .map((child) => iNodeToVNode(context, child))
-      .filter((n) => n != null);
+    if (codeElement.textContent !== newText) {
+      codeElement.textContent = newText;
+    }
+  } else {
+    // Element node - recursively patch children
+    const element = domNode as HTMLElement;
+    patchDOM(context, iNode.children, element);
 
-  return vNode;
+    // Link nodes set URL and title attributes in InlineNode.attrs
+    if (iNode.attrs)
+      Object.entries(iNode.attrs).forEach(([key, value]) => {
+        element.setAttribute(key, value);
+      });
+  }
 };
 
-const linkVNode = (context: RenderContext, iNode: InlineNode): VNode => {
-  const childVNodes = iNode.children?.map((iNode) =>
-    iNodeToVNode(context, iNode),
-  );
-  const linkProps = {
-    props: { className: context.schema.marks.link.class },
-    attrs: {
-      ...context.schema.marks.link.attributes,
-      ...iNode.attrs,
-    },
-  };
+const createDOMNode = (context: RenderContext, iNode: InlineNode): ChildNode => {
+  const node = iNode.node;
 
-  return h("a", linkProps, childVNodes);
+  if (!node || !isSyntaxNode(node)) {
+    // Create text node
+    const text = extractText(context, iNode);
+    return document.createTextNode(text);
+  }
+
+  if (node.name === "InlineCode") {
+    // Create code element with plain text content
+    const codeElement = document.createElement("code");
+    const text = extractText(context, iNode.children[0]);
+    codeElement.textContent = text;
+    return codeElement;
+  }
+
+  // Create element node and recursively render children
+  const spec = getNodeSpec(context.schema, node);
+  const element = createElement(spec, spec.tag, iNode.attrs);
+
+  for (const child of iNode.children) {
+    const childNode = createDOMNode(context, child);
+    element.appendChild(childNode);
+  }
+
+  return element;
 };
 
 // --- Type guards and utilities
@@ -256,9 +292,6 @@ const textNodeFT = (from: number, to: number) => ({
 const textNode = (node: BoundedNode): InlineNode =>
   textNodeFT(node.from, node.to);
 
-const textVNode = (context: RenderContext, from: number, to: number) =>
-  h("", {}, context.text.substring(from, to));
-
 const markLengths = (
   node: SyntaxNode,
 ): { start: number; end?: number } | undefined => {
@@ -272,6 +305,36 @@ const markLengths = (
   const end = endInst.to - endInst.from;
 
   return { start, end };
+};
+
+/**
+ * Checks if a DOM node matches an InlineNode structurally.
+ */
+const nodesMatch = (
+  context: RenderContext,
+  iNode: InlineNode,
+  domNode: ChildNode,
+): boolean => {
+  const node = iNode.node;
+  if (!node || !isSyntaxNode(node)) {
+    return domNode.nodeType === Node.TEXT_NODE;
+  }
+
+  if (domNode.nodeType !== Node.ELEMENT_NODE) {
+    return false;
+  }
+
+  const element = domNode as HTMLElement;
+  const spec = getNodeSpec(context.schema, node);
+  return element.tagName.toLowerCase() === spec.tag.toLowerCase();
+};
+
+/**
+ * Extracts text content from an InlineNode based on its from/to positions.
+ */
+const extractText = (context: RenderContext, node: BoundedNode): string => {
+  const { from, to } = node;
+  return context.text.substring(from, to);
 };
 
 /**
