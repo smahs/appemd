@@ -42,6 +42,7 @@ export const schemaSpec: SchemaSpec = {
     bullet_list: {
       tag: "ul",
       render: ListRenderer.render,
+      cleanup: ListRenderer.cleanup,
     },
     list_item: {
       tag: "li",

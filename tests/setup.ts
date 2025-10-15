@@ -1,7 +1,7 @@
 import get from "just-safe-get";
 import { expect, vi } from "vitest";
 import { MarkdownRenderer } from "../src";
-import type { Accessor, Setter } from "../src/types.ts";
+import type { Getter, Setter } from "../src/types.ts";
 
 type Assertion = (el: HTMLElement, prop: string, value?: unknown) => void;
 
@@ -30,7 +30,7 @@ vi.mock(import("../src/utils"), async (importOriginal) => {
 
 export const setupMarkdownRendererTests = () => {
   let _text = "";
-  const text: Accessor<string> = () => _text;
+  const text: Getter<string> = () => _text;
   const setText: Setter<string> = (
     value: string | ((prev: string) => string),
   ) => {
@@ -42,7 +42,7 @@ export const setupMarkdownRendererTests = () => {
   };
 
   let _target = document.createElement("div");
-  const target: Accessor<HTMLDivElement> = () => _target;
+  const target: Getter<HTMLDivElement> = () => _target;
   const setTarget: Setter<HTMLDivElement> = (
     value: HTMLDivElement | ((_: HTMLDivElement) => HTMLDivElement),
   ) => {

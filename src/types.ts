@@ -1,8 +1,8 @@
 import type { SyntaxNode } from "@lezer/common";
 import type { MarkdownParser } from "@lezer/markdown";
 
-// Types for solid-js compatibility
-export type Accessor<T> = () => T;
+// Reactive state types
+export type Getter<T> = () => T;
 export type Setter<T> = {
   (value: T): void;
   (updater: (prev: T) => T): void;
@@ -37,7 +37,7 @@ export interface BlockElements {
 }
 
 export type TargetElement = Element | undefined | null;
-export type Target = TargetElement | Accessor<TargetElement>;
+export type Target = TargetElement | Getter<TargetElement>;
 
 export interface BlockState {
   index: number;

@@ -1,10 +1,20 @@
-## `appemd`
+# `appemd`
 
-An incremental DOM renderer for markdown using @lezer/markdown AST.
+Rendering a continuously updating Markdown document in the browser can be inefficient. Traditional parsers often re-parse and/or re-render the entire document on every change, leading to poor performance and high resource usage. This is especially problematic when dealing with high-throughput streaming data, such as text generations served by LLM servers.
 
-It does not render characters or words in a true streaming manner—this is not possible due to the syntax of Markdown. Instead, it rerenders only the last leaf node's inline text content, which for larger documents can consume significantly fewer resources than rerendering the entire document on every update.
+appemd leverages the [`@lezer/markdown`](https://github.com/lezer-parser/markdown) parser to incrementally build an AST of the document. The renderer tracks changes at the block level to avoid re-rendering large portions of the document, and optimizes inline DOM updates to prevent unnecessary reflows and repaints.
+
+### Key Features
+
+- **Streaming & Incremental:** Appends and parses new content efficiently, without re-processing the entire document.
+- **DOM-Aware Rendering:** Applies minimal patches to the DOM, avoiding Element re-creation as much as possible.
+- **High Performance:** Optimized for scenarios with high token per second (TPS) rates, such as LLM streaming.
+- **Styling Agnostic:** Externally controlled styling via a declarative schema, allowing for seamless integration with any CSS framework or design system.
+- **Extensible:** Easily customize rendering for specific Markdown blocks or extend the parser with custom syntax.
 
 ## Installation
+
+Add to with your project with your favorite package manager:
 
 ```bash
 npm install appemd
@@ -12,54 +22,90 @@ npm install appemd
 
 ## Usage
 
-Markdown content can be rendered either entirely in one pass or appended incrementally. The latter is particularly useful for efficiently rendering chunks of text instead of parsing and rendering the entire document repeatedly. An example use case is an SSE stream response from a language model server to a generation request.
+### Rendering a Complete Document
 
-### Single Pass Rendering
+For a one-time rendering of a Markdown document, use the static `render` method.
 
-The simplest way to render a complete Markdown document:
+```ts
+import { MarkdownRenderer } from 'appemd';
 
-```js
-// el: a DOM element (usually a <div>)
-// content: markdown content string; can be string or () => string
-MarkdownRenderer.render(el, content);
+// 'target' can be a DOM element or a function that returns one.
+const target = () => document.getElementById('target');
+
+// 'text' is the full Markdown string, or a function that returns one.
+const text = () => "# Welcome to appemd";
+
+// Render the entire document into the 'el' element.
+MarkdownRenderer.render(target, text);
 ```
 
 ### Incremental Rendering
 
-Initialize an instance of MarkdownRenderer and use the append method to update the AST and render to the DOM:
+To avoid duplicating memory, the document text state must be managed externally and provided to the `init` method via a getter function. The renderer will use this function to access the current text on demand.
 
-```js
-// el: a DOM element (usually a <div>)
-// content: initially available text managed by the consumer, must be () => string
-// setContent: optional callback to update content with chunks after DOM updates
-renderer = MarkdownRenderer.init(el, content, setContent);
+The text state must be updated before calling the `append` method or the renderer can udpate it was initialized with a setter function argument.
+
+```ts
+import { MarkdownRenderer } from 'appemd';
+
+// 'target' can be a DOM element or a function that returns one.
+const target = () => document.getElementById('target');
+
+// 'text' is the full Markdown string, or a function that returns one.
+const text = () => "# Welcome to ";
+
+const chunk = "appemd";
+
+// 'setText' is an optional setter to update the text
+const setText = (prev: string) => prev + chunk;
+
+// Intantiate the renderer
+const renderer = MarkdownRenderer.init(target, text, setText);
+
+// Append the new chunk
 renderer.append(chunk);
 ```
 
-## Scrolling Behavior
+## Styling
 
-As new content is appended to the DOM, the library can optionally scroll down to ensure the new content remains visible. To allow users to manually control scrolling, an offset from the bottom of the scroll container can be configured. The default offset is 48 pixels.
+A core design principle of appemd is to separate rendering logic from styling. The library uses a `SchemaSpec` to define how Markdown blocks and format marks are mapped to DOM elements, classes and attributes. This allows you to integrate appemd with your existing CSS and design system without modifying the library code.
 
-**Note**: Certain block elements (like headings) may interfere with auto-scrolling if the sum of their margin-top and line-height exceeds the configured threshold. Future versions will support per-block scrolling configuration.
+An example schema is provided via the schemaSpec export. You can extend or replace this object to customize the output. The below code show how to replace the default code block renderer and apply custom classes to both the `pre` and `code` elements.
 
-```js
-// offset: pixels from the bottom of scrolling container beyond which auto scrolling will stop
-renderer = MarkdownRenderer.init(el, content, setContent, { scroll: true, offset: 48 });
+```ts
+import type { BlockRenderFn, RendererOptions, SchemaSpec } from "appemd";
+import { schemaSpec } from "appemd";
+
+const CodeBlockRenderer: BlockRenderFn = (state, block) => {
+  // ...
+};
+
+const { blocks, marks } = schemaSpec;
+const mySpec: SchemaSpec = {
+  blocks: {
+    ...blocks,
+    code_block: {
+      ...schemaSpec.blocks.code_block,
+      class: "my-pre-class",
+      children: [{ tag: "code", class: "my-code-class" }],
+      render: CodeBlockRenderer,
+    },
+  }
+};
+
+const options: RendererOptions = { schema: mySpec };
+const renderer = MarkdownRenderer.init(target, text, setText, options);
 ```
 
-## Schema
-
-A core design principle of this module is to separate CSS and DOM configuration from the JavaScript logic. An example schema is provided via the schemaSpec export. Defining CSS classes and DOM attributes should suffice for most common use cases.
-
+## Extensibility
 Customization may be required in some scenarios:
 
-1. Custom Block Rendering: To render a supported block node differently (e.g., add a "copy code" button to code blocks), implement the `BlockRenderer` type and replace the render prop of `code_block` in the schema.
+1. **Custom Block Rendering**: To render a supported block node differently (e.g., add a "copy code" button to code blocks), implement the `BlockRenderFn` type and replace the render prop of `code_block` in the schema.
 
-2. Extended Syntax Support: By default, `commonmark` and `gfm` syntax parsers are provided by @lezer/markdown. To extend syntax support, write a plugin to extend `MarkdownParser` and specify provided the extended parser as `RendererOptions.parser` when instantiating `MarkdownRenderer`. A custom block renderer for the extension plugin may be specified in the spec.
-
-## Limitations
-
-The library renders what `@lezer/markdown` can parse (with a few exceptions such as `setext` headings and HTML blocks). HTML blocks with nested markdown content would require a custom plugin for `@lezer/markdown` and a custom renderer for `appemd`.
+2. **Extending Syntax Support**: By default, the CommonMark and GFM parsers are used from `@lezer/markdown`. To extend the syntax (e.g., custom directives like `:::note`), you need to:
+* Create a custom plugin for `@lezer/markdown` by extending `MarkdownParser`.
+* Provide this parser to the renderer constructor using `RendererOptions.parser`.
+* Update the `SchemaSpec` to define a renderer for your new syntax node.
 
 ## Contributing
 
