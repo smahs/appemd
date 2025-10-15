@@ -10,7 +10,7 @@ export type Setter<T> = {
 
 // Copied from prosemirror-model for prosemirror toDOM compatibility
 type DOMNode = InstanceType<typeof window.Node>;
-export type DOMOutputSpec =
+type DOMOutputSpec =
   | string
   | DOMNode
   | { dom: DOMNode; contentDOM?: HTMLElement }
@@ -49,8 +49,6 @@ export interface BlockState {
 export interface RenderState {
   target?: TargetElement;
   block?: BlockState;
-  getINode: (node: SyntaxNode) => InlineNode | undefined;
-  setINode: (node: SyntaxNode, iNode: InlineNode) => void;
 }
 
 export interface BoundedNode {
@@ -72,9 +70,8 @@ export interface InlineNode extends BoundedNode {
   // Children of this node flattened, with Text nodes mapping the empty spaces in SyntaxNode
   children: InlineNode[];
 
-  // Set arbitrary attributes
-  // biome-ignore lint: valid use case
-  attrs?: Record<string, any>;
+  // Set DOM attributes
+  attrs?: DOMStringMap;
 }
 
 export interface RenderContext {
@@ -105,7 +102,7 @@ export type BlockCleanupFn = (
 export interface NodeSpec {
   tag: string;
   class?: string;
-  attributes?: Record<string, string>;
+  attributes?: DOMStringMap;
   toDOM?: () => DOMOutputSpec;
 }
 

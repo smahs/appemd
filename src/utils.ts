@@ -10,8 +10,6 @@ import type {
   SchemaSpec,
 } from "./types.ts";
 
-export const nodeKey = (node: SyntaxNode) => `${node.name}-${node.from}`;
-
 export const getNodeSpec = (schema: SchemaSpec, node: SyntaxNode) => {
   let name = node.name,
     headingLevel: string | undefined;
@@ -29,7 +27,7 @@ export const getNodeSpec = (schema: SchemaSpec, node: SyntaxNode) => {
 export const createElement = (
   spec: NodeSpec | BlockSpec,
   tag?: string,
-  attrs?: Record<string, any>,
+  attrs?: DOMStringMap,
 ): HTMLElement => {
   const element = document.createElement(tag ?? spec.tag);
 
@@ -40,7 +38,7 @@ export const createElement = (
   if (spec.attributes || attrs) {
     const merged = Object.assign({}, attrs, spec.attributes);
     Object.entries(merged).forEach(([key, value]) => {
-      element.setAttribute(key, value);
+      if (value) element.setAttribute(key, value);
     });
   }
 
