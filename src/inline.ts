@@ -297,8 +297,8 @@ const textNode = (node: BoundedNode): InlineNode =>
   textNodeFT(node.from, node.to);
 
 const setAttributes = (iNode: InlineNode, element: HTMLElement) => {
-  element.setAttribute("data-inode-from", iNode.from.toString());
-  element.setAttribute("data-inode-to", iNode.to.toString());
+  element.setAttribute("data-appemd-from", iNode.from.toString());
+  element.setAttribute("data-appemd-to", iNode.to.toString());
   return element;
 };
 
@@ -348,8 +348,8 @@ const contentMatch = (iNode: InlineNode, domNode: ChildNode): boolean => {
   if (domNode.nodeType === Node.TEXT_NODE) return false;
 
   const element = domNode as HTMLElement,
-    elFrom = element.getAttribute("data-inode-from"),
-    elTo = element.getAttribute("data-inode-to");
+    elFrom = element.getAttribute("data-appemd-from"),
+    elTo = element.getAttribute("data-appemd-to");
 
   if (elFrom && elTo) {
     const fromInt = Number.parseInt(elFrom, 10),

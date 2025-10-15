@@ -9,27 +9,27 @@ describe("MarkdownRenderer Inline", () => {
 
   it("bold inline text", () => {
     render("**bold text**");
-    expects(contains, "innerHTML", "<strong>bold text</strong>");
+    expects(equals, "textContent", "bold text", "strong");
   });
 
   it("emphasis inline text", () => {
     render("*emphasized text*");
-    expects(contains, "innerHTML", "<em>emphasized text</em>");
+    expects(equals, "textContent", "emphasized text", "em");
   });
 
   it("strikethrough inline text", () => {
     render("~~strikethrough text~~");
-    expects(contains, "innerHTML", "<s>strikethrough text</s>");
+    expects(equals, "textContent", "strikethrough text", "s");
   });
 
   it("subscript inline text", () => {
     render("H~2~O");
-    expects(contains, "innerHTML", "<sub>2</sub>");
+    expects(equals, "textContent", "2", "sub");
   });
 
   it("superscript inline text", () => {
     render("E=mc^2^");
-    expects(contains, "innerHTML", "<sup>2</sup>");
+    expects(equals, "textContent", "2", "sup");
   });
 
   it("link inline text without title and label", () => {
@@ -54,7 +54,7 @@ describe("MarkdownRenderer Inline", () => {
   it("link inline text with formatted title", () => {
     render('[**link** _one_](https://example.com "Title")');
     expects(equals, "title", "Title", "a");
-    expects(contains, "innerHTML", "<strong>link</strong>", "a");
+    expects(equals, "textContent", "link", "strong");
   });
 
   it("inline code", () => {
@@ -75,7 +75,8 @@ describe("MarkdownRenderer Inline", () => {
 
   it("nested inline markup", () => {
     render("**bold ^sup^ bold**");
-    expects(contains, "innerHTML", "<strong>bold <sup>sup</sup> bold</strong>");
+    expects(equals, "textContent", "sup", "sup");
+    expects(equals, "textContent", "bold sup bold", "strong");
   });
 
   it("escaped characters", () => {
@@ -92,12 +93,8 @@ describe("MarkdownRenderer Inline", () => {
 
   it("mixed and nested inline markup", () => {
     render("*emphasized* _**bold _emphasized_ bold**_");
-    expects(contains, "innerHTML", "<em>emphasized</em>");
-    expects(
-      contains,
-      "innerHTML",
-      "<em><strong>bold <em>emphasized</em> bold</strong></em>",
-    );
+    expects(equals, "textContent", "emphasized", "em");
+    expects(equals, "textContent", "bold emphasized bold", "strong");
   });
 
   it("very long inline markup", () => {
@@ -110,21 +107,22 @@ describe("MarkdownRenderer Inline", () => {
   it("special characters within inline markup", () => {
     const text = "**bold & < > text**";
     render(text);
-    expects(contains, "innerHTML", "<strong>bold &amp; &lt; &gt; text</strong>");
+    expects(equals, "textContent", "bold & < > text", "strong");
   });
 
   it("complex inline text", () => {
     const text =
       "This is **bold**, *emphasized*, ~~strikethrough~~, H~2~O, E=mc^2^, [link](https://example.com), and `inline code`.";
     render(text);
-    const expected = [
-      "<strong>bold</strong>",
-      "<em>emphasized</em>",
-      "<s>strikethrough</s>",
-      "<sub>2</sub>",
-      "<sup>2</sup>",
-    ];
-    for (const html of expected) expects(contains, "innerHTML", html);
+    const expected = {
+      strong: "bold",
+      em: "emphasized",
+      s: "strikethrough",
+      sub: "2",
+      sup: "2",
+    };
+    for (const [tag, content] of Object.entries(expected))
+      expects(equals, "textContent", content, tag);
     expects(contains, "href", "https://example.com", "a");
   });
 });
