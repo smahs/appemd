@@ -19,7 +19,10 @@ export const renderInline = (
   element: HTMLElement,
 ) => {
   const tree = buildInlineTree(context, node);
+  if (contentMatch(tree, element)) return;
+
   patchDOM(context, tree.children, element);
+  setAttributes(tree, element);
   // context.state.setINode(node, tree);
 };
 
@@ -221,17 +224,19 @@ const updateNode = (
     return;
   }
 
+  // Element node - return if the length has not changed
+  const element = domNode as HTMLElement;
+  if (contentMatch(iNode, element)) return;
+
   if (node.name === "InlineCode") {
     // InlineCode: treat as plain text within code element, no formatting
-    const codeElement = domNode as HTMLElement;
     const newText = extractText(context, iNode.children[0]);
 
-    if (codeElement.textContent !== newText) {
-      codeElement.textContent = newText;
+    if (element.textContent !== newText) {
+      element.textContent = newText;
     }
   } else {
-    // Element node - recursively patch children
-    const element = domNode as HTMLElement;
+    // Recursively patch children
     patchDOM(context, iNode.children, element);
 
     // Link nodes set URL and title attributes in InlineNode.attrs
@@ -256,7 +261,7 @@ const createDOMNode = (context: RenderContext, iNode: InlineNode): ChildNode => 
     const codeElement = document.createElement("code");
     const text = extractText(context, iNode.children[0]);
     codeElement.textContent = text;
-    return codeElement;
+    return setAttributes(iNode, codeElement);
   }
 
   // Create element node and recursively render children
@@ -268,7 +273,7 @@ const createDOMNode = (context: RenderContext, iNode: InlineNode): ChildNode => 
     element.appendChild(childNode);
   }
 
-  return element;
+  return setAttributes(iNode, element);
 };
 
 // --- Type guards and utilities
@@ -291,6 +296,12 @@ const textNodeFT = (from: number, to: number) => ({
 
 const textNode = (node: BoundedNode): InlineNode =>
   textNodeFT(node.from, node.to);
+
+const setAttributes = (iNode: InlineNode, element: HTMLElement) => {
+  element.setAttribute("data-inode-from", iNode.from.toString());
+  element.setAttribute("data-inode-to", iNode.to.toString());
+  return element;
+};
 
 const markLengths = (
   node: SyntaxNode,
@@ -327,6 +338,28 @@ const nodesMatch = (
   const element = domNode as HTMLElement;
   const spec = getNodeSpec(context.schema, node);
   return element.tagName.toLowerCase() === spec.tag.toLowerCase();
+};
+
+/**
+ * Gets previously set from/to data attributes from the dom ChildNode
+ * and compares with the iNode value to check if the content length is same.
+ */
+const contentMatch = (iNode: InlineNode, domNode: ChildNode): boolean => {
+  // Text Node cannot have attributes, so fallback to reprocessing
+  if (domNode.nodeType === Node.TEXT_NODE) return false;
+
+  const element = domNode as HTMLElement,
+    elFrom = element.getAttribute("data-inode-from"),
+    elTo = element.getAttribute("data-inode-to");
+
+  if (elFrom && elTo) {
+    const fromInt = Number.parseInt(elFrom, 10),
+      toInt = Number.parseInt(elTo, 10);
+    if (fromInt === iNode.from && toInt === iNode.to) return true;
+  }
+
+  // Data attributes not set on the dom Node, fallback to reprocessing
+  return false;
 };
 
 /**
