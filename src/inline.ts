@@ -23,7 +23,6 @@ export const renderInline = (
 
   patchDOM(context, tree.children, element);
   setAttributes(tree, element);
-  // context.state.setINode(node, tree);
 };
 
 // Build inline segments from a SyntaxNode
@@ -242,7 +241,7 @@ const updateNode = (
     // Link nodes set URL and title attributes in InlineNode.attrs
     if (iNode.attrs)
       Object.entries(iNode.attrs).forEach(([key, value]) => {
-        element.setAttribute(key, value);
+        if (value) element.setAttribute(key, value);
       });
   }
 };

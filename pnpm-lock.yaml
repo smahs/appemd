@@ -17,9 +17,6 @@ importers:
       '@lezer/markdown':
         specifier: ^1.4.3
         version: 1.4.3
-      snabbdom:
-        specifier: ^3.6.3
-        version: 3.6.3
     devDependencies:
       '@types/node':
         specifier: ^22.15.17
@@ -1063,10 +1060,6 @@ packages:
   smol-toml@1.4.2:
     resolution: {integrity: sha512-rInDH6lCNiEyn3+hH8KVGFdbjc099j47+OSgbMrfDYX1CmXLfdKd7qi6IfcWj2wFxvSVkuI46M+wPGYfEOEj6g==}
     engines: {node: '>= 18'}
-
-  snabbdom@3.6.3:
-    resolution: {integrity: sha512-W2lHLLw2qR2Vv0DcMmcxXqcfdBaIcoN+y/86SmHv8fn4DazEQSH6KN3TjZcWvwujW56OHiiirsbHWZb4vx/0fg==}
-    engines: {node: '>=12.17.0'}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -2255,8 +2248,6 @@ snapshots:
   siginfo@2.0.0: {}
 
   smol-toml@1.4.2: {}
-
-  snabbdom@3.6.3: {}
 
   source-map-js@1.2.1: {}
 

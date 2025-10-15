@@ -15,7 +15,6 @@ import type {
   Accessor,
   BlockSpec,
   BlockState,
-  InlineNode,
   RenderContext,
   RendererOptions,
   RenderState,
@@ -24,7 +23,7 @@ import type {
   Target,
   TargetElement,
 } from "./types.ts";
-import { getChildren, getNodeSpec, nodeKey, renderBlock } from "./utils.ts";
+import { getChildren, getNodeSpec, renderBlock } from "./utils.ts";
 
 const defaultParser = (): MarkdownParser => {
   return cmParser.configure([GFM, Subscript, Superscript, Emoji, Autolink]);
@@ -33,11 +32,6 @@ const defaultParser = (): MarkdownParser => {
 export class RendererState implements RenderState {
   private _target: Target;
   block?: BlockState;
-  iNodeCache: Map<string, InlineNode | undefined>;
-
-  constructor() {
-    this.iNodeCache = new Map();
-  }
 
   /**
    * Gets the target element, resolving an Accessor function if necessary.
@@ -60,10 +54,6 @@ export class RendererState implements RenderState {
     this.block = block;
   }
 
-  clearInlineNodeCache() {
-    this.iNodeCache.clear();
-  }
-
   getParentBlockElement(el: HTMLElement | null) {
     if (!el || !this.target) return;
 
@@ -73,14 +63,6 @@ export class RendererState implements RenderState {
     }
 
     return blockEl;
-  }
-
-  getINode(node: SyntaxNode): InlineNode | undefined {
-    return this.iNodeCache.get(nodeKey(node));
-  }
-
-  setINode(node: SyntaxNode, iNode: InlineNode) {
-    this.iNodeCache.set(nodeKey(node), iNode);
   }
 }
 
@@ -273,11 +255,6 @@ export class MarkdownRenderer {
     oldChild
       ? target.replaceChild(newChild, oldChild)
       : target.appendChild(newChild);
-
-    // Clear VNode cache if we're changing into a new block node
-    if (newChild instanceof HTMLElement && parent === this.target) {
-      this.state.clearInlineNodeCache();
-    }
   }
 
   /**
