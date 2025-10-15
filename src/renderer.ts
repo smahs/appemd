@@ -12,9 +12,9 @@ import {
 
 import { schemaSpec } from "./spec.ts";
 import type {
-  Accessor,
   BlockSpec,
   BlockState,
+  Getter,
   RenderContext,
   RendererOptions,
   RenderState,
@@ -34,7 +34,7 @@ export class RendererState implements RenderState {
   block?: BlockState;
 
   /**
-   * Gets the target element, resolving an Accessor function if necessary.
+   * Gets the target element, resolving a Getter function if necessary.
    */
   get target(): TargetElement {
     if (typeof this._target === "function") {
@@ -44,7 +44,7 @@ export class RendererState implements RenderState {
   }
 
   /**
-   * Sets the target element or Accessor.
+   * Sets the target element or its Getter.
    */
   set target(target: Target | undefined | null) {
     this._target = target;
@@ -76,7 +76,7 @@ export class MarkdownRenderer {
 
   private tree: Tree;
   private fragments: readonly TreeFragment[];
-  private _text: string | Accessor<string>;
+  private _text: string | Getter<string>;
   private setText?: Setter<string>;
 
   get text(): string {
@@ -97,7 +97,7 @@ export class MarkdownRenderer {
     parser: MarkdownParser,
     tree: Tree,
     fragments: readonly TreeFragment[],
-    text: string | Accessor<string>,
+    text: string | Getter<string>,
     setText?: Setter<string>,
     options?: RendererOptions,
   ) {
@@ -115,7 +115,7 @@ export class MarkdownRenderer {
 
   static init(
     target: Target,
-    text: Accessor<string>,
+    text: Getter<string>,
     setText?: Setter<string>,
     options?: RendererOptions,
   ): MarkdownRenderer {
@@ -137,7 +137,7 @@ export class MarkdownRenderer {
 
   static render(
     target: Target,
-    text: string | Accessor<string>,
+    text: string | Getter<string>,
     options?: RendererOptions,
   ) {
     const parser = options?.parser ?? defaultParser();
@@ -273,14 +273,14 @@ export class MarkdownRenderer {
   }
 
   /**
-   * Gets the target element, resolving an Accessor function if necessary.
+   * Gets the target element, resolving a Getter function if necessary.
    */
   get target(): TargetElement {
     return this.state.target;
   }
 
   /**
-   * Sets the target element or Accessor in the RenderState instance.
+   * Sets the target element or its Getter in the RenderState instance.
    * Also performs the initial render when the target is first set.
    */
   set target(target: Target | undefined | null) {
